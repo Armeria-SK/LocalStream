@@ -1027,16 +1027,28 @@ public sealed class StreamSession : IDisposable
             return;
         }
 
+        // Real client-side drops are hard evidence and are NOT polluted by idle (an idle interval
+        // carries few frames, not many dropped ones), so this trigger stays live no matter how
+        // sparse the interval was.
+        if (s.FramesDropped >= 3 || dropRate > 0.03)
+        {
+            AdaptDown($"drops {s.FramesDropped}/{total} ({dropRate:P1})");
+            _cleanStreak = 0;
+            _idrSinceLastStats = 0;
+            return;
+        }
+
         // A mostly-idle desktop starves the capture thread: DXGI's TryAcquire(100) blocks up to
         // 100ms per call waiting for a frame that never arrives, which inflates the cap/pipe/dec
-        // latency percentiles to 1000ms+ even though nothing is actually being sent. That looks
-        // identical to real congestion to the checks below, so skip evaluation entirely when too
-        // few frames were encoded this interval -- there is no meaningful congestion signal in a
-        // mostly-empty window, and reacting to it drove bitrate down on idle and never let it
-        // recover once the desktop moved again.
+        // latency percentiles to 1000ms+ even though nothing is actually being sent. Only the
+        // latency-derived triggers below are meaningless in that case, so skip them -- but keep
+        // _cleanStreak so AdaptUp can still accumulate across idle gaps, and reset the growing-
+        // latency streak so a count carried in from before the idle gap can't fire on the first
+        // (still-settling) interval after motion resumes.
         double intervalFps = s.IntervalMs > 0 ? total * 1000.0 / s.IntervalMs : Fps;
         if (intervalFps < Fps / 2.0)
         {
+            _latencyGrowingStreak = 0;
             _idrSinceLastStats = 0;
             return;
         }
@@ -1055,7 +1067,6 @@ public sealed class StreamSession : IDisposable
         _latencyGrowingStreak = latencyGrowingNow ? _latencyGrowingStreak + 1 : 0;
         bool latencySustained = _latencyGrowingStreak >= 3;
 
-        bool dropCongestion = s.FramesDropped >= 3 || dropRate > 0.03;
         bool absoluteNetworkBacklog = transportP95Ms >= NetworkBacklogCutMs;
         bool withinLatencyBudget =
             (transportP95Ms < 0 || transportP95Ms <= NetworkLatencyBudgetMs) &&
@@ -1063,15 +1074,13 @@ public sealed class StreamSession : IDisposable
         bool clean = s.FramesDropped == 0 && _idrSinceLastStats == 0 &&
             !latencyGrowingNow && withinLatencyBudget;
 
-        if (dropCongestion || latencySustained || absoluteNetworkBacklog)
+        if (latencySustained || absoluteNetworkBacklog)
         {
-            string reason = dropCongestion
-                ? $"drops {s.FramesDropped}/{total} ({dropRate:P1})"
-                : absoluteNetworkBacklog
-                    ? $"transport backlog p95 {transportP95Ms} ms " +
-                      $"(cap {s.CaptureToReceiveP95Ms} - pipe {s.ServerPipelineP95Ms}) >= {NetworkBacklogCutMs} ms"
-                    : $"latency p95 transport {transportP95Ms}>{BaselineStr(_bestTransportMs)}+40 " +
-                      $"dec {s.DecodeToSurfaceP95Ms}>{BaselineStr(_bestDecodeToSurfaceMs)}+25 x{_latencyGrowingStreak}";
+            string reason = absoluteNetworkBacklog
+                ? $"transport backlog p95 {transportP95Ms} ms " +
+                  $"(cap {s.CaptureToReceiveP95Ms} - pipe {s.ServerPipelineP95Ms}) >= {NetworkBacklogCutMs} ms"
+                : $"latency p95 transport {transportP95Ms}>{BaselineStr(_bestTransportMs)}+40 " +
+                  $"dec {s.DecodeToSurfaceP95Ms}>{BaselineStr(_bestDecodeToSurfaceMs)}+25 x{_latencyGrowingStreak}";
             AdaptDown(reason);
             _cleanStreak = 0;
         }
