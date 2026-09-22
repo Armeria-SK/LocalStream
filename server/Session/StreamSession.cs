@@ -112,14 +112,12 @@ public sealed class StreamSession : IDisposable
     private const int BitrateProbeStepKbps = 500;
     private const int NetworkLatencyBudgetMs = 80;
     private const int NetworkBacklogCutMs = 150;
-    // Measured healthy decode-to-surface p95 runs 38-45ms even under normal load, so a 40ms
-    // budget was tripping the "clean" check on ordinary jitter and blocking AdaptUp forever.
-    private const int DecoderLatencyBudgetMs = 80;
     private const long SlowBitrateReconfigureMs = 50;
 
     // Stats surfaced to the console (Program reads these)
     private long _encodedFrames;
     private long _captureSubmittedFrames;
+    private long _pacingSkipped;
     private int _capturedSinceEncode;
     private long _idrRequestTotal;
     private int _pipelineFaultHandling;
@@ -168,6 +166,7 @@ public sealed class StreamSession : IDisposable
     public string? PendingPin => _state == SessionState.AwaitingPairCode ? _pin : null;
     public long EncodedFrames => Interlocked.Read(ref _encodedFrames);
     public long CaptureSubmittedFrames => Interlocked.Read(ref _captureSubmittedFrames);
+    public long CapturePacingSkipped => Interlocked.Read(ref _pacingSkipped);
     public long IdrRequestTotal => Interlocked.Read(ref _idrRequestTotal);
     public long AudioPacketsSent => _audioSender?.PacketsSent ?? 0;
     public long AudioBytesSent => _audioSender?.BytesSent ?? 0;
@@ -752,7 +751,10 @@ public sealed class StreamSession : IDisposable
                     // this frame. Advancing from "now" let per-frame acquire jitter accumulate
                     // into permanent drift, which silently halved 60 Hz capture down to 30 Hz.
                     if (nowTicks + frameIntervalTicks / 2 < nextFrameTicks)
+                    {
+                        Interlocked.Increment(ref _pacingSkipped);
                         continue; // Desktop may present at 120/144/240 Hz; honor requested FPS.
+                    }
                     nextFrameTicks = nextFrameTicks + frameIntervalTicks > nowTicks
                         ? nextFrameTicks + frameIntervalTicks // Stay on the ideal grid.
                         : nowTicks + frameIntervalTicks;      // Resync after a long idle gap.
@@ -1056,11 +1058,17 @@ public sealed class StreamSession : IDisposable
         // Preserve the healthy floor for the entire stream epoch. The old implementation reset
         // it after every bitrate change, allowing a 600 ms backlog to become the new "healthy"
         // baseline and immediately authorizing another increase.
+        //
+        // DecodeToSurfaceP95Ms is intentionally excluded here: it is TV-side decode time, not
+        // something this host controls, and it is not a reliable congestion signal on this path.
+        // A bigger keyframe after an upward bitrate step, or a slower client SoC, inflates it
+        // independent of any real network or capture problem (observed 130-300ms on a healthy,
+        // zero-drop, low-latency-transport link after switching to a larger CBR target), which
+        // drove bitrate down and kept AdaptUp from ever firing again. It is still tracked in
+        // _bestDecodeToSurfaceMs / LastDecodeToSurfaceP95Ms purely for diagnostics.
         bool latencyGrowingNow =
-            (_bestTransportMs != int.MaxValue &&
-             transportP95Ms > _bestTransportMs + 40) ||
-            (_bestDecodeToSurfaceMs != int.MaxValue &&
-             s.DecodeToSurfaceP95Ms > _bestDecodeToSurfaceMs + 25);
+            _bestTransportMs != int.MaxValue &&
+            transportP95Ms > _bestTransportMs + 40;
 
         // Require the rise to persist across >=3 consecutive intervals before reacting.
         // WiFi produces frequent 1-2 interval spikes that are not real congestion.
@@ -1068,9 +1076,7 @@ public sealed class StreamSession : IDisposable
         bool latencySustained = _latencyGrowingStreak >= 3;
 
         bool absoluteNetworkBacklog = transportP95Ms >= NetworkBacklogCutMs;
-        bool withinLatencyBudget =
-            (transportP95Ms < 0 || transportP95Ms <= NetworkLatencyBudgetMs) &&
-            (s.DecodeToSurfaceP95Ms < 0 || s.DecodeToSurfaceP95Ms <= DecoderLatencyBudgetMs);
+        bool withinLatencyBudget = transportP95Ms < 0 || transportP95Ms <= NetworkLatencyBudgetMs;
         bool clean = s.FramesDropped == 0 && _idrSinceLastStats == 0 &&
             !latencyGrowingNow && withinLatencyBudget;
 
@@ -1079,8 +1085,7 @@ public sealed class StreamSession : IDisposable
             string reason = absoluteNetworkBacklog
                 ? $"transport backlog p95 {transportP95Ms} ms " +
                   $"(cap {s.CaptureToReceiveP95Ms} - pipe {s.ServerPipelineP95Ms}) >= {NetworkBacklogCutMs} ms"
-                : $"latency p95 transport {transportP95Ms}>{BaselineStr(_bestTransportMs)}+40 " +
-                  $"dec {s.DecodeToSurfaceP95Ms}>{BaselineStr(_bestDecodeToSurfaceMs)}+25 x{_latencyGrowingStreak}";
+                : $"latency p95 transport {transportP95Ms}>{BaselineStr(_bestTransportMs)}+40 x{_latencyGrowingStreak}";
             AdaptDown(reason);
             _cleanStreak = 0;
         }

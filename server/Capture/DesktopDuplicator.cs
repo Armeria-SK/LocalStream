@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using SharpGen.Runtime;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -169,7 +170,7 @@ public sealed class DesktopDuplicator : IDisposable
 
         if (_duplication == null)
         {
-            CreateDuplication();
+            TryCreateDuplication();
             return false;
         }
 
@@ -249,16 +250,37 @@ public sealed class DesktopDuplicator : IDisposable
             _duplication?.ReleaseFrame();
         }
         catch { }
+        TryCreateDuplication();
+    }
+
+    /// <summary>
+    /// Recreates the duplication, swallowing the transient failures a mode change or the UAC
+    /// secure desktop can produce (observed as both SharpGenException and raw COMException,
+    /// carrying HRESULTs like E_ACCESSDENIED while the output is briefly unavailable).
+    ///
+    /// Every caller of CreateDuplication() outside the constructor must go through here: leaving
+    /// even one call site unguarded reintroduces the bug this exists to fix. A prior version only
+    /// wrapped the call inside RecreateAfterAccessLost() itself; the very next TryAcquire() call
+    /// (which also calls CreateDuplication() directly when _duplication is null, e.g. because a
+    /// mode change is still in progress) hit the same failure unguarded, and the unhandled
+    /// exception propagated out of TryAcquire into CaptureLoop's catch-all, killing the whole
+    /// capture thread and dropping the stream instead of just retrying on the next tick.
+    /// </summary>
+    private bool TryCreateDuplication()
+    {
         try
         {
             CreateDuplication();
+            return true;
         }
-        catch (SharpGenException ex)
+        catch (Exception ex) when (ex is SharpGenException or COMException)
         {
-            // Duplication may be briefly unavailable (e.g. during the UAC secure desktop).
-            // Leave _duplication null; the next TryAcquire will retry.
+            // Duplication may be briefly unavailable (e.g. during a display mode/refresh-rate
+            // change or the UAC secure desktop). Leave _duplication null; the next TryAcquire
+            // will retry instead of tearing down the stream.
             Console.Error.WriteLine($"[capture] duplication recreate deferred: {ex.Message}");
             _duplication = null;
+            return false;
         }
     }
 

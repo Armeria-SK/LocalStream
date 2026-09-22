@@ -161,6 +161,7 @@ long prevCapReal = 0;
 long prevCapPointer = 0;
 long prevCapTimeouts = 0;
 long prevCapAccum = 0;
+long prevPacingSkipped = 0;
 
 // Headless suppresses the per-second console [stats] line, so accumulate a compact bounded
 // summary and emit it to the app log once every 10 s — the only stream telemetry a headless
@@ -215,10 +216,12 @@ try
             long capPointer = session.CapturePointerOnly;
             long capTimeouts = session.CaptureTimeouts;
             long capAccum = session.CaptureAccumulatedFrames;
+            long pacingSkipped = session.CapturePacingSkipped;
             long realDelta = Math.Max(0, capReal - prevCapReal);
             long pointerDelta = Math.Max(0, capPointer - prevCapPointer);
             long timeoutDelta = Math.Max(0, capTimeouts - prevCapTimeouts);
             long accumDelta = Math.Max(0, capAccum - prevCapAccum);
+            long pacingSkippedDelta = Math.Max(0, pacingSkipped - prevPacingSkipped);
             // presents/s ~= Δaccumulated + Δreal: distinguishes "content is only N fps" from
             // "the pipeline is dropping presents" when reading these logs later.
             long presentsPerSec = accumDelta + realDelta;
@@ -236,6 +239,7 @@ try
             prevCapPointer = capPointer;
             prevCapTimeouts = capTimeouts;
             prevCapAccum = capAccum;
+            prevPacingSkipped = pacingSkipped;
 
             string audioStatus = session.AudioStreaming
                 ? $"audio {audioKbps,4} kbps"
@@ -272,7 +276,7 @@ try
                 session.MediaEndpointReady);
             string diagnosticLine =
                 $"[diag] likely={bottleneck} | host {presentsPerSec} present -> " +
-                $"{submittedFps} submit -> {fps} encode -> {sentFps} send | " +
+                $"{submittedFps} submit -> {fps} encode -> {sentFps} send | skip {pacingSkippedDelta}/s | " +
                 $"android {Metric(clientAssembledFps)} assemble -> {Metric(clientDecodedFps)} render | " +
                 $"drops asm {Metric(session.LastClientAssemblyDrops)} dec {Metric(session.LastClientDecoderDrops)} " +
                 $"fec-fix {Metric(session.LastClientFecRecovered)} | " +
@@ -357,6 +361,7 @@ try
             prevCapPointer = 0;
             prevCapTimeouts = 0;
             prevCapAccum = 0;
+            prevPacingSkipped = 0;
         }
     }
 }
