@@ -109,7 +109,7 @@ public sealed class StreamSession : IDisposable
     private const long CeilingRecoveryDelayMs = 60_000;
     private const long CeilingRecoveryIntervalMs = 30_000;
     private const int CleanIntervalsBeforeProbe = 10;
-    private const int BitrateProbeStepKbps = 500;
+    private const int BitrateProbeStepKbps = 1000;
     private const int NetworkLatencyBudgetMs = 80;
     private const int NetworkBacklogCutMs = 150;
     // TV-class MediaCodec pipelines idle at 100-160 ms of decode-queue depth with zero loss
@@ -480,7 +480,7 @@ public sealed class StreamSession : IDisposable
 
         try
         {
-            _audioSender = new AudioSender(Ports.PreferredAudio, _clientAddress);
+            _audioSender = new AudioSender(_options.AudioPort, _clientAddress);
             _audioSender.Start();
             _audioCapture = new SystemAudioCapture(CurrentStreamPtsMs);
             _audioCapture.DataAvailable += OnAudioData;
@@ -650,7 +650,7 @@ public sealed class StreamSession : IDisposable
 
     private void StartPipeline()
     {
-        _sender = new MediaSender(Ports.PreferredMedia, _clientAddress);
+        _sender = new MediaSender(_options.MediaPort, _clientAddress);
         _sender.OnGamepadState = OnGamepadState;
         _sender.OnMouseMotion = OnMouseMotion;
         _sender.OnClientConnected = OnMediaClientConnected;
@@ -666,7 +666,9 @@ public sealed class StreamSession : IDisposable
             _streamHeight,
             Fps);
 
-        _currentBitrateKbps = Math.Min(12000, _maxBitrateKbps); // start bitrate (PROTOCOL.md §4)
+        // Games/movies: start high so first-frame quality does not need 2-3 probe rounds
+        // to look right; probing above this still steps +1000 kbps per clean interval.
+        _currentBitrateKbps = Math.Min(16000, _maxBitrateKbps); // start bitrate (PROTOCOL.md §4)
         _encoder = EncoderFactory.Create(
             _duplicator.Device,
             _streamWidth,

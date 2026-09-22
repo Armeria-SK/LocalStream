@@ -454,10 +454,12 @@ class MediaReceiver(
         private const val HOLE_PUNCH_MESSAGE = "DSMH"
         private const val INPUT_SEND_QUEUE_CAPACITY = 16
         private const val RECV_PACKET_BUFFER_BYTES = 1500
-        // Keep enough room for a paced 150-300 KiB IDR, but do not allow the kernel to hide
-        // hundreds of milliseconds of stale video. At ~24 Mbps wire rate a 1 MiB socket queue
-        // alone can hold ~350 ms; combined Wi-Fi/driver buffering produced 600+ ms field stalls.
-        private const val RECV_SOCKET_BUFFER_BYTES = 512 * 1024
+        // Sized for the high-bitrate game/movie profile: the server can start at 16 Mbps and
+        // probe to 30 Mbps, and a P5-preset IDR can burst well past 300 KiB. A 512 KiB queue
+        // overran during those bursts (dropped datagrams -> decode stalls); 4 MiB absorbs a
+        // full burst at 30 Mbps while latency stays governed by the sender's pacing, not by
+        // this queue, because packets are consumed as fast as Wi-Fi delivers them.
+        private const val RECV_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024
         private const val SOCKET_TIMEOUT_MS = 1000
         private const val VIDEO_REPUNCH_MS = 1500L
         private const val VIDEO_RECOVERY_INTERVAL_MS = 5000L

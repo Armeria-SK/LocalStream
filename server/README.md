@@ -28,7 +28,8 @@ cd server
 dotnet run -c Release
 ```
 
-On start it prints the local IP addresses and ports, then waits for a client. When a new
+On start it prints the local IP addresses and ports (video/audio UDP are fixed at
+47802/47803 unless overridden), then waits for a client. When a new
 device pairs, a **6-digit PIN** is shown in a box — type it into the Android app. Once
 streaming, a 1 Hz status line reports encoded fps, current bitrate, client-side dropped
 frames, IDR requests per second, and the active audio payload rate.
@@ -40,8 +41,12 @@ subsequent connections auto-authenticate (TOFU). Delete that file to force re-pa
 
 - `--quality native|720p` sets the default for clients that do not select quality themselves.
 - `--max-bitrate-kbps N` sets a hard encoder-target ceiling for every client. The default is
-  20,000 kbps and the minimum is 2,000. On congested Wi-Fi, `--max-bitrate-kbps 12000` is a
+  30,000 kbps (tuned for games/movies; sessions start at 16,000 kbps and probe up) and the
+  minimum is 2,000. On congested Wi-Fi, `--max-bitrate-kbps 12000` is a
   useful 1080p60 starting point; this ceiling excludes XOR-FEC, packet headers, and PCM audio.
+- `--media-port N` / `--audio-port N` change the fixed video/audio UDP ports (defaults
+  47802/47803). All ports are bound at startup with a short retry so restarts are
+  deterministic; a busy port falls back to an ephemeral one with a warning on stderr.
 - `--web-port N` changes the dashboard port from 47810, `--no-web` disables it, and `--web-lan`
   binds it to LAN interfaces instead of loopback. LAN mode is unauthenticated and exposes the
   pairing PIN, so use it only on a trusted private network.

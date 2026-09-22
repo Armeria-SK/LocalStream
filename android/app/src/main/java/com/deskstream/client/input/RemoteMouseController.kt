@@ -101,6 +101,51 @@ class RemoteMouseController(
         sendRelative(dxDp * displayDensity, dyDp * displayDensity, force = true)
     }
 
+    // ---- Phone touchpad API (PhoneControllerServer) --------------------------------------
+    // The phone is the controller while the TV only displays. Every call hops through this
+    // class (StreamActivity posts to the main thread) so phone packets share motionSequence
+    // /buttonSequence with TV-touch packets — the server's monotonicity check (PROTOCOL.md
+    // §5) accepts exactly one sequence space per direction.
+
+    /** Relative move from the phone touchpad, in dp. Phone pads track the finger like a
+     * laptop touchpad, so deltas skip the TV's fat-finger gain curve but reuse the same
+     * 120 Hz coalescer, packet builder and sequence counter as touch motion. */
+    fun phoneMove(dx: Float, dy: Float) {
+        if (!enabled) return
+        pendingDx += dx
+        pendingDy += dy
+        val now = SystemClock.elapsedRealtimeNanos()
+        if (now - lastMotionSentAtNanos < MIN_SEND_INTERVAL_NANOS) return
+        val x = pendingDx.roundToInt()
+        val y = pendingDy.roundToInt()
+        pendingDx -= x
+        pendingDy -= y
+        if (x != 0 || y != 0) send(MousePacket.MODE_RELATIVE, x, y, 0, 0)
+    }
+
+    /** Two-finger swipe from the phone, in wheel units (same unit as TV-touch scroll). */
+    fun phoneScroll(wheelUnits: Int) {
+        if (!enabled || wheelUnits == 0) return
+        send(MousePacket.MODE_RELATIVE, 0, 0, 0, wheelUnits)
+    }
+
+    fun phoneClick(button: String) {
+        if (!enabled) return
+        clearPendingTap()
+        sendClick(button)
+    }
+
+    /** Press/release for phone drag gestures. Left joins [leftHeld] so [reset] still
+     * releases a held button if the stream dies mid-drag. */
+    fun phoneButton(button: String, down: Boolean) {
+        if (!enabled) return
+        if (button == "left") {
+            if (down == leftHeld) return
+            leftHeld = down
+        }
+        sendButton(button, down)
+    }
+
     fun reset() {
         if (leftHeld) sendButton("left", false)
         leftHeld = false

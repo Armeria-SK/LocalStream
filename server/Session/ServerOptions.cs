@@ -1,3 +1,5 @@
+using DeskStreamer.Server.Protocol;
+
 namespace DeskStreamer.Server.Session;
 
 /// <summary>
@@ -8,7 +10,10 @@ namespace DeskStreamer.Server.Session;
 public sealed class ServerOptions
 {
     public const int MinimumBitrateKbps = 3000;
-    public const int DefaultMaxBitrateKbps = 20000;
+    public const int DefaultMaxBitrateKbps = 30000;
+
+    private int _mediaPort = Ports.PreferredMedia;
+    private int _audioPort = Ports.PreferredAudio;
 
     // Codec APIs express bits/second as uint. Keeping the configured kbps below this boundary
     // prevents multiplication overflow even when an unreasonable CLI value is supplied.
@@ -23,6 +28,23 @@ public sealed class ServerOptions
         get => _defaultQuality;
         set => _defaultQuality = Normalize(value);
     }
+
+    /// <summary>Preferred UDP port for the video stream (fixed; see PROTOCOL.md §2).</summary>
+    public int MediaPort
+    {
+        get => Volatile.Read(ref _mediaPort);
+        set => Volatile.Write(ref _mediaPort, ValidatePort(value, Ports.PreferredMedia));
+    }
+
+    /// <summary>Preferred UDP port for the audio stream (fixed; see PROTOCOL.md §2).</summary>
+    public int AudioPort
+    {
+        get => Volatile.Read(ref _audioPort);
+        set => Volatile.Write(ref _audioPort, ValidatePort(value, Ports.PreferredAudio));
+    }
+
+    private static int ValidatePort(int value, int fallback) =>
+        value is > 0 and < 65536 ? value : fallback;
 
     /// <summary>Hard server ceiling applied to every client START_STREAM request.</summary>
     public int MaxBitrateKbps

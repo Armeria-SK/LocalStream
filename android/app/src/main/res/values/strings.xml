@@ -73,4 +73,8 @@
     <string name="pair_dialog_hint">PIN</string>
     <string name="pair_dialog_positive">Pair</string>
     <string name="pair_dialog_negative">Cancel</string>
+
+    <!-- Phone-as-controller pad (fixed TCP 47820) -->
+    <string name="phone_pad_hint">Phone control: %1$s · code %2$s</string>
+    <string name="phone_pad_unavailable">Phone control unavailable (port busy)</string>
 </resources>

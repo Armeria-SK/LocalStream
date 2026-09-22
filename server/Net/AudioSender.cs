@@ -38,16 +38,7 @@ public sealed class AudioSender : IDisposable
         try { _socket.SendBufferSize = 64 * 1024; } catch { }
         try { _socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)3, 0x88); } catch { }
 
-        try
-        {
-            _socket.Bind(new IPEndPoint(IPAddress.Any, preferredPort));
-            Port = preferredPort;
-        }
-        catch (SocketException)
-        {
-            _socket.Bind(new IPEndPoint(IPAddress.Any, 0));
-            Port = ((IPEndPoint)_socket.LocalEndPoint!).Port;
-        }
+        Port = UdpPortBinder.Bind(_socket, preferredPort, "audio");
     }
 
     public void Start()

@@ -382,8 +382,11 @@ class VideoDecoder(
         return try {
             val format = MediaFormat.createVideoFormat(MIME_TYPE, config.width, config.height).apply {
                 setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
-                setInteger(MediaFormat.KEY_OPERATING_RATE, config.fps)
-                setInteger(MediaFormat.KEY_PRIORITY, 0)
+                // Game/movie streams: allow the codec to spin up to 2x real time and run at
+                // real-time scheduling priority so decode keeps up with bursty IDR frames
+                // instead of the codec trading throughput for power.
+                setInteger(MediaFormat.KEY_OPERATING_RATE, config.fps * 2)
+                setInteger(MediaFormat.KEY_PRIORITY, 1)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_ACCESS_UNIT_BYTES)
             }
             val decoderName = chooseDecoderName(format, config)

@@ -77,9 +77,15 @@ public sealed class Nv12Converter : IDisposable
         _enumerator = _videoDevice.CreateVideoProcessorEnumerator(content);
         _processor = _videoDevice.CreateVideoProcessor(_enumerator, 0);
 
-        // Full-range/BT.709-ish is fine for desktop content; leaving color space at the
-        // driver default keeps the API surface small. If colors look washed out, set the
-        // stream/output color space here.
+        // Desktop BGRA is full-range sRGB. Pin the YUV conversion explicitly: BT.709
+        // matrix (driver default is BT.601) and full-range 0-255 output (driver default
+        // is studio 16-235). NvencH264Encoder.Configure signals the identical VUI — these
+        // two must stay in sync or players guess and colors shift.
+        _videoContext.VideoProcessorSetOutputColorSpace(_processor, new VideoProcessorColorSpace
+        {
+            YCbCr_Matrix = 1,  // BT.709
+            Nominal_Range = 2, // 0-255 (D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_0_255)
+        });
 
         var outDesc = new VideoProcessorOutputViewDescription
         {

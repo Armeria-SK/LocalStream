@@ -146,7 +146,7 @@ object ControlClient {
         scope.launch { writeFrame(ClientMessages.pairCode(pin)) }
     }
 
-    fun startStream(maxBitrateKbps: Int = 20000, fps: Int = 60, quality: String = "native") {
+    fun startStream(maxBitrateKbps: Int = 30000, fps: Int = 60, quality: String = "native") {
         scope.launch { writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, quality)) }
     }
 

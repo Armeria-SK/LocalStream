@@ -3,9 +3,11 @@
 Both the Windows server and the Android client implement exactly this. All multi-byte
 integers are **big-endian**. All JSON is UTF-8. Protocol version is `1`.
 
-Default ports: discovery **UDP 47800**, control **TCP 47801**, video **UDP negotiated**
-(server picks, typically 47802, and reports it in `STREAM_STARTED`), audio **UDP
-negotiated** (server picks, typically 47803, and reports it in `AUDIO_STARTED`).
+Default ports: discovery **UDP 47800**, control **TCP 47801**, video **UDP 47802**, audio
+**UDP 47803** — all fixed and bound at server startup (short retry, then an ephemeral
+fallback with a loud warning; the actual bound ports are still reported in `STREAM_STARTED`
+and `AUDIO_STARTED`). Override with `--media-port` / `--audio-port`. The Android client's
+phone-controller pad uses **TCP 47820** (see §7).
 
 ---
 
@@ -397,7 +399,8 @@ for its cursor overlay; clients that do not recognize it ignore it.
 
 Inputs: `STATS` messages and IDR request rate.
 - The effective session ceiling is the smaller of `START_STREAM.maxBitrateKbps` and the
-  operator-configured server ceiling (20,000 kbps by default, never below 2,000 kbps).
+  operator-configured server ceiling (30,000 kbps by default, never below 2,000 kbps;
+  `--max-bitrate-kbps` overrides).
 - **Down:** if a stats interval has at least 3 dropped frames or more than 3% loss,
   capture-to-receive p95 reaches 150 ms, transport p95 (capture-to-receive minus
   `serverPipelineP95Ms`) stays above the 80 ms healthy budget for 3 consecutive intervals,
@@ -409,11 +412,12 @@ Inputs: `STATS` messages and IDR request rate.
 - **Up:** require 10 consecutive clean intervals, capture-to-receive p95 ≤80 ms,
   decode-to-surface p95 ≤max(200 ms, stream-epoch healthy decode floor + 40 ms), at least
   15 s since the previous bitrate change, and at least
-  30 s since congestion. Probe by only +500 kbps. A congestion cut pins the remembered ceiling;
-  only a full 60 s without congestion permits the ceiling to rise by 500 kbps, at most once
+  30 s since congestion. Probe by +1000 kbps. A congestion cut pins the remembered ceiling;
+  only a full 60 s without congestion permits the ceiling to rise by 1000 kbps, at most once
   every 30 s. If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
   disable further upward probes for that stream; emergency downward changes remain available.
-- Start at min(12000, maxBitrateKbps).
+- Start at min(16000, maxBitrateKbps) — high enough that games/movies look right in the
+  first frame instead of needing two or three probe rounds.
 - Optional latency fields do not break older peers. The healthy latency floors are retained
   for the stream epoch as diagnostics (best-ever transport and decode-to-surface samples);
   bitrate changes must not reset them while old UDP data may still be queued.
@@ -429,3 +433,31 @@ Inputs: `STATS` messages and IDR request rate.
   `START_STREAM` again. Control socket death while backgrounded is fine — reconnect on
   foreground.
 - Auth failure with a stored token (server re-paired/reset) → clear token → PAIRING.
+
+## 6. Fixed ports (startup)
+
+- The server binds video/audio UDP to 47802/47803 immediately at startup (not at stream
+  start) and retries each bind for ~1 s; if the port is still taken (a second server
+  instance) it falls back to an ephemeral port and logs a loud warning. The bound ports
+  are always the ones reported in `STREAM_STARTED`/`AUDIO_STARTED` and by the web
+  dashboard, so clients never hard-code a port — they read it from those messages.
+- `--media-port <n>` / `--audio-port <n>` override the defaults; invalid values fall back
+  to 47802/47803.
+
+## 7. Phone controller pad (Android client, TCP 47820)
+
+The Android TV app doubles as a local HTTP + WebSocket server so a phone browser can act
+as the controller while the TV only displays (screen and control separated):
+
+- Fixed port **47820**, bound at stream start (short retry, then disabled with a log if
+  busy — streaming itself is unaffected).
+- `GET /` serves a self-contained touchpad page (no external assets). The WebSocket path
+  is `/ws` (RFC6455, server-side subset: text, ping/pong, close).
+- The first message after the upgrade must be `{"t":"auth","code":"NNNN"}` with the
+  4-digit code shown on the TV; the server replies `authok` or `authfail` (600 ms delay,
+  connection closed after 5 failures). Unauthenticated sockets cannot send input.
+- After auth: `{"t":"move","dx":…,"dy":…}` (dp deltas), `{"t":"scroll","d":wheelUnits}`,
+  `{"t":"click","b":"left"|"right"}`, `{"t":"button","b":"left"|"right","down":bool}`,
+  `{"t":"ping"}` → `pong`.
+- All pad input is forwarded through the same `RemoteMouseController` sequence counters
+  as TV-touch input (§3C monotonicity requires exactly one sequence space).

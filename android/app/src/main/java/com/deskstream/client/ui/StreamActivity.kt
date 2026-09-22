@@ -40,9 +40,11 @@ import com.deskstream.client.input.MouseMode
 import com.deskstream.client.input.RemoteMouseController
 import com.deskstream.client.net.ControlClient
 import com.deskstream.client.net.MediaReceiver
+import com.deskstream.client.net.PhoneControllerServer
 import com.deskstream.client.net.StreamStats
 import com.deskstream.client.proto.ServerMessage
 import com.deskstream.client.proto.CursorPosition
+import com.deskstream.client.proto.MousePacket
 import com.deskstream.client.video.VideoDecoder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -72,6 +74,20 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private lateinit var gamepadForwarder: GamepadForwarder
     private lateinit var remoteMouse: RemoteMouseController
+    /** Phone-as-controller pad (PROTOCOL.md §7): fixed TCP 47820, started with the Activity
+     * and torn down in [onDestroy]; the TV shows its URL+code while a stream is live. */
+    private var phoneServer: PhoneControllerServer? = null
+    private var phonePadAnnounced = false
+    /** Cursor insurance: DXGI capture never contains the host cursor — only DSMC feedback
+     * draws it. Until the first DSMC arrives, integrate the outgoing motion packets
+     * (byte 5 = mode, bytes 12/15 = x, 16/19 = y, big-endian) and show a virtual cursor
+     * starting from the screen center after motion has flowed for [CURSOR_FALLBACK_DELAY_MS].
+     * Real DSMC snaps the position and retires this path ([updateRemoteCursor]). */
+    private var cursorDsmcSeen = false
+    private var cursorFallbackJob: Job? = null
+    private var cursorFallbackShown = false
+    private var virtualCursorX = 0.5f
+    private var virtualCursorY = 0.5f
     private lateinit var prefs: Prefs
     private var wifiLock: WifiManager.WifiLock? = null
     /** Preferred stream quality ("native" or "720p"), persisted via [Prefs.streamQuality] and
@@ -159,7 +175,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         gamepadForwarder = GamepadForwarder(applicationContext, ::onGamepadInventoryChanged)
         remoteMouse = RemoteMouseController(
             binding.surfaceView,
-            sendMotion = { packet -> mediaReceiver?.sendMousePacket(packet) },
+            sendMotion = { packet ->
+                onOutgoingMousePacket(packet)
+                mediaReceiver?.sendMousePacket(packet)
+            },
             onModeChanged = {
                 updatePointerButton(it)
                 showMouseGestureHint()
@@ -167,6 +186,18 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             shouldHandleCleanScreenGesture = { controlsHidden },
             onCleanScreenReveal = { showControls() }
         )
+        // Phone pad binds on a background thread: the fixed-port retry loop may sleep up to
+        // ~750 ms when the port is held, which must never block activity startup. Announce
+        // the URL+code once the bind completes (covers a stream that started first).
+        phoneServer = PhoneControllerServer(remoteMouse).also { server ->
+            Thread {
+                if (server.start()) {
+                    runOnUiThread { announcePhonePad() }
+                } else {
+                    Log.e(TAG, "phone pad failed to bind port ${PhoneControllerServer.PORT}")
+                }
+            }.start()
+        }
         createWifiLock()
         applyImmersiveMode()
 
@@ -273,6 +304,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         mouseToolbarCollapseJob?.cancel()
         mouseToolbarCollapseJob = null
         resetRemotePointerState()
+        cursorFallbackJob?.cancel()
+        cursorFallbackJob = null
+        phoneServer?.stop()
+        phoneServer = null
         super.onDestroy()
         gamepadForwarder.stop()
         stopReceivers()
@@ -650,6 +685,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         gamepadForwardingEnabled = false
         negotiateGamepads()
         negotiateMouseInput()
+        announcePhonePad()
 
         binding.tvStreamStatus.visibility = View.VISIBLE
         binding.btnAudio.isEnabled = false
@@ -742,10 +778,20 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         // only after feedback arrives for the first motion packet.
         if (!active) binding.tvRemoteCursor.visibility = View.GONE
         if (!active) hideMouseGestureHint()
+        if (!active) {
+            cursorFallbackJob?.cancel()
+            cursorFallbackJob = null
+            cursorFallbackShown = false
+        }
         updatePointerButton(remoteMouse.currentMode())
     }
 
     private fun updateRemoteCursor(position: CursorPosition) {
+        // Real DSMC feedback exists — snap to it and permanently retire the integrated
+        // fallback so the two never fight over the same view.
+        cursorDsmcSeen = true
+        cursorFallbackJob?.cancel()
+        cursorFallbackJob = null
         if (mouseStatus != "live" || !mouseEnabledByUser) return
         val surface = binding.surfaceView
         val cursor = binding.tvRemoteCursor
@@ -755,6 +801,79 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         cursor.translationX = surface.x + position.x / 65535f * (surface.width - 1)
         cursor.translationY = surface.y + position.y / 65535f * (surface.height - 1)
         cursor.visibility = View.VISIBLE
+    }
+
+    /**
+     * Cursor insurance: the PC pointer is never part of the DXGI-captured frames — only DSMC
+     * feedback ([updateRemoteCursor]) draws it. If that feedback never arrives (lost packet,
+     * server without the feature), integrate the motion packets we already send — byte 5 is
+     * the mode, bytes 12..15 / 16..19 the big-endian x/y (MousePacket) — starting from the
+     * screen center, and reveal the overlay once motion has flowed for 400 ms. Runs on the
+     * main thread (TV touch, D-pad nudge) or via the phone pad's main-thread dispatch.
+     */
+    private fun onOutgoingMousePacket(packet: ByteArray) {
+        if (cursorDsmcSeen || packet.size < MousePacket.SIZE) return
+        if (mouseStatus != "live" || !mouseEnabledByUser) return
+        if (lastStreamWidth <= 0 || lastStreamHeight <= 0) return
+        val mode = packet[5].toInt()
+        val x = readBeInt(packet, 12)
+        val y = readBeInt(packet, 16)
+        if (mode == MousePacket.MODE_ABSOLUTE) {
+            virtualCursorX = x / 65535f
+            virtualCursorY = y / 65535f
+        } else {
+            // Relative deltas are host-pixel motion; the stream size stands in for the host
+            // desktop (exact at native quality, approximate at 720p — insurance only).
+            virtualCursorX = (virtualCursorX + x.toFloat() / lastStreamWidth).coerceIn(0f, 1f)
+            virtualCursorY = (virtualCursorY + y.toFloat() / lastStreamHeight).coerceIn(0f, 1f)
+        }
+        if (cursorFallbackShown) {
+            renderVirtualCursor()
+        } else if (cursorFallbackJob == null) {
+            cursorFallbackJob = lifecycleScope.launch {
+                delay(CURSOR_FALLBACK_DELAY_MS)
+                cursorFallbackJob = null
+                if (!cursorDsmcSeen && mouseStatus == "live" && mouseEnabledByUser) {
+                    cursorFallbackShown = true
+                    renderVirtualCursor()
+                }
+            }
+        }
+    }
+
+    private fun renderVirtualCursor() {
+        if (cursorDsmcSeen || mouseStatus != "live" || !mouseEnabledByUser) return
+        val surface = binding.surfaceView
+        val cursor = binding.tvRemoteCursor
+        if (surface.width <= 0 || surface.height <= 0) return
+        cursor.translationX = surface.x + virtualCursorX * (surface.width - 1)
+        cursor.translationY = surface.y + virtualCursorY * (surface.height - 1)
+        cursor.visibility = View.VISIBLE
+    }
+
+    private fun readBeInt(bytes: ByteArray, offset: Int): Int =
+        ((bytes[offset].toInt() and 0xff) shl 24) or
+            ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+            ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+            (bytes[offset + 3].toInt() and 0xff)
+
+    /** Shows the phone-pad URL+code snackbar once per Activity so a phone can pair as the
+     * controller (TV = display only). The persistent copy lives in the diagnostics overlay. */
+    private fun announcePhonePad() {
+        if (phonePadAnnounced) return
+        val server = phoneServer ?: return
+        if (server.isRunning) {
+            phonePadAnnounced = true
+            val ip = PhoneControllerServer.localAddress() ?: "?"
+            showSnackbar(
+                getString(R.string.phone_pad_hint, "http://$ip:${server.port}", server.code),
+                Snackbar.LENGTH_LONG
+            )
+        } else {
+            // Still binding (or the port stayed busy); diagnostics reports the final state.
+            return
+        }
+        renderDiagnostics()
     }
 
     private fun showMouseGestureHint() {
@@ -1124,6 +1243,12 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding.btnMouseClick.isEnabled = false
         binding.btnMouseRight.isEnabled = false
         binding.tvRemoteCursor.visibility = View.GONE
+        cursorFallbackJob?.cancel()
+        cursorFallbackJob = null
+        cursorFallbackShown = false
+        cursorDsmcSeen = false
+        virtualCursorX = 0.5f
+        virtualCursorY = 0.5f
         val stoppedReceiver = mediaReceiver
         mediaReceiver = null
         stoppedReceiver?.stop()
@@ -1202,6 +1327,14 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
             append("\nPAD    $gamepadDetail")
             append("\nMOUSE  $mouseStatus · ${remoteMouse.currentMode().name.lowercase()}")
+            append("\nPHONE  ")
+            val pad = phoneServer
+            if (pad != null && pad.isRunning) {
+                val padIp = PhoneControllerServer.localAddress() ?: "?"
+                append("http://$padIp:${pad.port} · code ${pad.code}")
+            } else {
+                append("unavailable (port ${PhoneControllerServer.PORT} busy)")
+            }
             append("\nQUAL   ${qualityLabel(streamQuality)}")
         }
     }
@@ -1277,10 +1410,12 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     companion object {
         private const val TAG = "StreamActivity"
         private const val STATE_CONTROLS_HIDDEN = "controls_hidden"
-        private const val MAX_NATIVE_BITRATE_KBPS = 20000
+        private const val MAX_NATIVE_BITRATE_KBPS = 30000
         private const val MAX_720P_BITRATE_KBPS = 10000
         private const val TARGET_FPS = 60
         private const val MOUSE_HINT_VISIBLE_MS = 4500L
+        // Insurance cursor: only claim the pointer is missing after motion actually flowed.
+        private const val CURSOR_FALLBACK_DELAY_MS = 400L
         private const val MOUSE_HINT_FADE_MS = 250L
         private const val MOUSE_TOOLBAR_EXPANDED_MS = 5000L
         private const val AUDIO_NEGOTIATION_TIMEOUT_MS = 3500L

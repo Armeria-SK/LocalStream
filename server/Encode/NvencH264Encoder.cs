@@ -34,8 +34,12 @@ public sealed class NvencH264Encoder : IVideoEncoder
     private readonly int _fps;
     private readonly Dictionary<IntPtr, RegisteredTexture> _textures = new();
 
+    private readonly IntPtr _device;
     private NvEncoder _encoder;
     private NvEncConfig _config;
+    private Guid _presetGuid = NvEncPresetGuids.P5;
+    private bool _temporalAq;
+    private bool _sessionAttempted;
     private NvEncCreateBitstreamBuffer _bitstream;
     private byte[] _output = new byte[1 << 20];
     private uint _frameIndex;
@@ -65,14 +69,20 @@ public sealed class NvencH264Encoder : IVideoEncoder
 
         try
         {
+            _device = device.NativePointer;
             _encoder = OpenEncoderForDirectX(device.NativePointer);
-            _config = _encoder.GetEncodePresetConfigEx(
-                NvEncCodecGuids.H264,
-                NvEncPresetGuids.P3,
-                NvEncTuningInfo.UltraLowLatency).PresetCfg;
 
-            Configure(initialBitrateKbps);
-            InitializeEncoder();
+            // Quality ladder: P5 + Temporal AQ first (better detail at the same bitrate),
+            // then drop features step by step so an older GPU/driver still starts. The
+            // final rung is exactly the previous P3 configuration (known working).
+            if (!TryStartEncoder(NvEncPresetGuids.P5, temporalAq: true, initialBitrateKbps) &&
+                !TryStartEncoder(NvEncPresetGuids.P5, temporalAq: false, initialBitrateKbps) &&
+                !TryStartEncoder(NvEncPresetGuids.P3, temporalAq: false, initialBitrateKbps))
+            {
+                throw new EncoderUnavailableException(
+                    "NVENC rejected every encoder configuration (P5+TemporalAQ, P5, P3).");
+            }
+
             _bitstream = _encoder.CreateBitstreamBuffer();
 
             // Prove the operation this whole backend depends on -- registering a live D3D11
@@ -89,6 +99,55 @@ public sealed class NvencH264Encoder : IVideoEncoder
         {
             Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// One rung of the encoder quality ladder: configure one preset/quality combination on
+    /// a clean NVENC session. Any NVENC error (unsupported preset GUID, Temporal AQ
+    /// rejected by the driver, initialize failure) reports false so the next rung runs.
+    /// </summary>
+    private bool TryStartEncoder(Guid preset, bool temporalAq, int bitrateKbps)
+    {
+        try
+        {
+            if (_sessionAttempted)
+            {
+                // A failed attempt can leave the session half-initialized — start clean.
+                try { _encoder.DestroyEncoder(); } catch { }
+                _encoder = OpenEncoderForDirectX(_device);
+            }
+            _sessionAttempted = true;
+
+            _presetGuid = preset;
+            _temporalAq = temporalAq && IsTemporalAqSupported();
+            _config = _encoder.GetEncodePresetConfigEx(
+                NvEncCodecGuids.H264,
+                _presetGuid,
+                NvEncTuningInfo.UltraLowLatency).PresetCfg;
+
+            Configure(bitrateKbps);
+            InitializeEncoder();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool IsTemporalAqSupported()
+    {
+        try
+        {
+            var caps = new NvEncCapsParam { CapsToQuery = NvEncCaps.SupportTemporalAq };
+            int supported = 0;
+            _encoder.GetEncodeCaps(NvEncCodecGuids.H264, ref caps, ref supported);
+            return supported != 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -112,7 +171,7 @@ public sealed class NvencH264Encoder : IVideoEncoder
         rc.VbvBufferSize = oneFrameVbv;
         rc.VbvInitialDelay = oneFrameVbv;
         rc.EnableLookahead = false;
-        rc.EnableTemporalAQ = false;
+        rc.EnableTemporalAQ = _temporalAq;
         rc.ZeroReorderDelay = true;
         rc.MultiPass = NvEncMultiPass.Disabled;
         rc.LowDelayKeyFrameScale = 1;
@@ -126,6 +185,19 @@ public sealed class NvencH264Encoder : IVideoEncoder
         h264.ChromaFormatIDC = 1;
         h264.SliceMode = 0;
         h264.SliceModeData = 0;
+
+        // Explicit color signaling: BT.709 primaries/transfer/matrix, full range 0-255.
+        // MUST match Nv12Converter's VideoProcessorSetOutputColorSpace — otherwise players
+        // guess (commonly BT.601 limited) and desktop/game colors visibly shift.
+        var vui = h264.H264VUIParameters;
+        vui.VideoSignalTypePresentFlag = 1;
+        vui.VideoFormat = NvEncVuiVideoFormat.Unspecified;
+        vui.VideoFullRangeFlag = 1;
+        vui.ColourDescriptionPresentFlag = 1;
+        vui.ColourPrimaries = NvEncVuiColorPrimaries.Bt709;
+        vui.TransferCharacteristics = NvEncVuiTransferCharacteristic.Bt709;
+        vui.ColourMatrix = NvEncVuiMatrixCoeffs.Bt709;
+        h264.H264VUIParameters = vui;
         _config.EncodeCodecConfig.H264Config = h264;
     }
 
@@ -142,7 +214,7 @@ public sealed class NvencH264Encoder : IVideoEncoder
     {
         Version = NV_ENC_INITIALIZE_PARAMS_VER,
         EncodeGuid = NvEncCodecGuids.H264,
-        PresetGuid = NvEncPresetGuids.P3,
+        PresetGuid = _presetGuid,
         EncodeWidth = (uint)_width,
         EncodeHeight = (uint)_height,
         MaxEncodeWidth = (uint)_width,

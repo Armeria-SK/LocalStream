@@ -52,10 +52,28 @@ if (FlagValue("--max-bitrate-kbps") is { } bitrateText
     maxBitrateKbps = parsedBitrate;
 }
 
+// Fixed media/audio UDP ports (defaults 47802/47803 per PROTOCOL.md). Bound at startup
+// with retries; see UdpPortBinder.
+int mediaPort = Ports.PreferredMedia;
+if (FlagValue("--media-port") is { } mediaText && int.TryParse(mediaText, out int parsedMedia)
+    && parsedMedia is > 0 and < 65536)
+{
+    mediaPort = parsedMedia;
+}
+
+int audioPort = Ports.PreferredAudio;
+if (FlagValue("--audio-port") is { } audioText && int.TryParse(audioText, out int parsedAudio)
+    && parsedAudio is > 0 and < 65536)
+{
+    audioPort = parsedAudio;
+}
+
 var options = new ServerOptions
 {
     DefaultQuality = ServerOptions.Normalize(FlagValue("--quality")),
     MaxBitrateKbps = maxBitrateKbps,
+    MediaPort = mediaPort,
+    AudioPort = audioPort,
 };
 
 // In headless mode there is no interactive console (the logon task has no window). Redirect all
@@ -113,8 +131,8 @@ AsyncLogger.Info($"DeskStream Server starting on host: {hostname}");
 foreach (var ip in listenIps)
 {
     Console.WriteLine($"  {ip}   (discovery UDP {Ports.Discovery}, control TCP {Ports.Control}, " +
-                      $"video UDP {Ports.PreferredMedia}, audio UDP {Ports.PreferredAudio})");
-    AsyncLogger.Info($"Listening on: {ip} (discovery={Ports.Discovery}, control={Ports.Control}, video={Ports.PreferredMedia}, audio={Ports.PreferredAudio})");
+                      $"video UDP {mediaPort}, audio UDP {audioPort})");
+    AsyncLogger.Info($"Listening on: {ip} (discovery={Ports.Discovery}, control={Ports.Control}, video={mediaPort}, audio={audioPort})");
 }
 Console.WriteLine();
 Console.WriteLine($"Default stream quality: {options.DefaultQuality}");

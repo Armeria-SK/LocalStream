@@ -141,17 +141,7 @@ public sealed class MediaSender : IDisposable
         try { _socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)3, 0x88); }
         catch { }
 
-        try
-        {
-            _socket.Bind(new IPEndPoint(IPAddress.Any, preferredPort));
-            Port = preferredPort;
-        }
-        catch (SocketException)
-        {
-            // Preferred port taken — fall back to an ephemeral port and report the real one.
-            _socket.Bind(new IPEndPoint(IPAddress.Any, 0));
-            Port = ((IPEndPoint)_socket.LocalEndPoint!).Port;
-        }
+        Port = UdpPortBinder.Bind(_socket, preferredPort, "video");
         // Keep the default blocking mode. Non-blocking Windows UDP commonly returns
         // WSAEWOULDBLOCK during IDR bursts; abandoning the remainder then guarantees an
         // incomplete frame. The bounded kernel buffer still limits queue growth.

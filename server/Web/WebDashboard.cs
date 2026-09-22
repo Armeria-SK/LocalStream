@@ -433,8 +433,8 @@ public sealed class WebDashboard : IDisposable
             ports = new
             {
                 control = Ports.Control,
-                video = Ports.PreferredMedia,
-                audio = Ports.PreferredAudio,
+                video = _options.MediaPort,
+                audio = _options.AudioPort,
             },
         };
     }
