@@ -112,7 +112,9 @@ public sealed class StreamSession : IDisposable
     private const int BitrateProbeStepKbps = 500;
     private const int NetworkLatencyBudgetMs = 80;
     private const int NetworkBacklogCutMs = 150;
-    private const int DecoderLatencyBudgetMs = 40;
+    // Measured healthy decode-to-surface p95 runs 38-45ms even under normal load, so a 40ms
+    // budget was tripping the "clean" check on ordinary jitter and blocking AdaptUp forever.
+    private const int DecoderLatencyBudgetMs = 80;
     private const long SlowBitrateReconfigureMs = 50;
 
     // Stats surfaced to the console (Program reads these)
@@ -1020,6 +1022,20 @@ public sealed class StreamSession : IDisposable
         // Learn the healthy startup floor, but let startup IDR, clock synchronization, and the
         // hardware codec settle before making a synchronous Media Foundation bitrate change.
         if (_clock == null || _clock.ElapsedMilliseconds < BitrateSettleMs)
+        {
+            _idrSinceLastStats = 0;
+            return;
+        }
+
+        // A mostly-idle desktop starves the capture thread: DXGI's TryAcquire(100) blocks up to
+        // 100ms per call waiting for a frame that never arrives, which inflates the cap/pipe/dec
+        // latency percentiles to 1000ms+ even though nothing is actually being sent. That looks
+        // identical to real congestion to the checks below, so skip evaluation entirely when too
+        // few frames were encoded this interval -- there is no meaningful congestion signal in a
+        // mostly-empty window, and reacting to it drove bitrate down on idle and never let it
+        // recover once the desktop moved again.
+        double intervalFps = s.IntervalMs > 0 ? total * 1000.0 / s.IntervalMs : Fps;
+        if (intervalFps < Fps / 2.0)
         {
             _idrSinceLastStats = 0;
             return;
