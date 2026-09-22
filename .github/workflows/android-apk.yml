@@ -1,0 +1,62 @@
+name: Android APK
+
+# Builds the DeskStream Android client and uploads the APKs as workflow artifacts.
+# Trigger: any push touching android/ (or this file), or a manual run from the Actions tab.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Installs/updates the Android SDK components this project needs (compileSdk/targetSdk 34)
+      # and wires ANDROID_HOME/ANDROID_SDK_ROOT for the Gradle build below.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      # Deliberately signed with the debug key (see android/README.md) so it installs without a
+      # release keystore -- same as assembleDebug, just with R8/shrinking applied.
+      - name: Build release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      # Informational only: a test failure must not block getting an installable APK out.
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+        continue-on-error: true
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskstream-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskstream-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
