@@ -51,7 +51,8 @@ public sealed class NvencH264Encoder : IVideoEncoder
         int width,
         int height,
         int fps,
-        int initialBitrateKbps)
+        int initialBitrateKbps,
+        ID3D11Texture2D? registrationProbe = null)
     {
         _width = width;
         _height = height;
@@ -73,6 +74,15 @@ public sealed class NvencH264Encoder : IVideoEncoder
             Configure(initialBitrateKbps);
             InitializeEncoder();
             _bitstream = _encoder.CreateBitstreamBuffer();
+
+            // Prove the operation this whole backend depends on -- registering a live D3D11
+            // NV12 surface with NVENC -- while EncoderFactory can still fall back to Media
+            // Foundation. Without this probe, an exotic driver refusing registration would
+            // only surface mid-stream as a capture-loop fault. The registration is cached in
+            // _textures and reused (map/unmap per frame) when that pool texture is submitted.
+            if (registrationProbe != null)
+                GetOrRegister(registrationProbe);
+
             _initialized = true;
         }
         catch

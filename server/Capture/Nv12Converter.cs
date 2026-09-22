@@ -34,6 +34,13 @@ public sealed class Nv12Converter : IDisposable
     /// <summary>Height of the NV12 output textures produced by <see cref="Convert"/>.</summary>
     public int OutHeight { get; }
 
+    /// <summary>
+    /// One pooled NV12 texture, exposed so a freshly created encoder can prove it can
+    /// register this GPU surface before the pipeline commits to that backend (see
+    /// EncoderFactory's NVENC -> Media Foundation fallback).
+    /// </summary>
+    public ID3D11Texture2D RegistrationProbe => _nv12[0];
+
     /// <summary>Output dimensions equal the input dimensions (no scaling).</summary>
     public Nv12Converter(ID3D11Device device, int width, int height, int fps)
         : this(device, width, height, width, height, fps)

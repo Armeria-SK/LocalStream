@@ -9,21 +9,39 @@ public static class EncoderFactory
         int width,
         int height,
         int fps,
-        int initialBitrateKbps)
+        int initialBitrateKbps,
+        ID3D11Texture2D? registrationProbe = null)
     {
         string requested = Environment.GetEnvironmentVariable("DESKSTREAM_ENCODER")?
             .Trim().ToLowerInvariant() ?? "";
 
-        if (requested == "nvenc")
+        if (requested is "mf" or "media-foundation" or "mediafoundation")
         {
-            Console.WriteLine("[encoder] native NVIDIA NVENC explicitly requested.");
-            return new NvencH264Encoder(device, width, height, fps, initialBitrateKbps);
+            Console.WriteLine("[encoder] Media Foundation backend explicitly requested.");
+            return new H264Encoder(device, width, height, fps, initialBitrateKbps);
         }
 
-        // The Media Foundation MFT is the Windows hardware path that was exercised by the
-        // original releases. Direct NVENC initialization is not sufficient proof that its
-        // first D3D11 texture can be registered/mapped on every NVIDIA driver, so it must be
-        // explicitly opted into instead of silently tearing down an otherwise healthy client.
+        // Side-by-side field comparison at 1080p60 (same host + TV): native NVENC started
+        // cleanly and held 60 fps with a 2-3 ms pipeline p95, while the Media Foundation
+        // path rejected candidates (E_OUTOFMEMORY / MF_E_INVALIDTYPE) and oscillated between
+        // 3-59 fps. NVENC is therefore the preferred default. Media Foundation remains the
+        // vendor-neutral fallback for non-NVIDIA GPUs and for any NVENC init/registration
+        // failure, so a machine without NVIDIA support still streams. DESKSTREAM_ENCODER=nvenc
+        // makes the preference strict (no fallback) for debugging.
+        try
+        {
+            Console.WriteLine("[encoder] attempting native NVIDIA NVENC backend.");
+            return new NvencH264Encoder(
+                device, width, height, fps, initialBitrateKbps, registrationProbe);
+        }
+        catch (Exception ex)
+        {
+            if (requested == "nvenc")
+                throw;
+            Console.WriteLine(
+                $"[encoder] NVENC unavailable ({ex.Message}); falling back to Media Foundation.");
+        }
+
         Console.WriteLine("[encoder] using Media Foundation hardware H.264 backend.");
         return new H264Encoder(device, width, height, fps, initialBitrateKbps);
     }

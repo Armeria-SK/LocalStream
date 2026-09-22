@@ -24,6 +24,7 @@
     <string name="mouse_gesture_hint">Move: 1 finger · Click: double-tap · Drag: double-tap + move\nScroll: 2 fingers · Right-click: short 2-finger tap</string>
     <string name="leave_stream_prompt">Leave the stream?</string>
     <string name="leave_stream_action">LEAVE</string>
+    <string name="leave_stream_cancel">STAY</string>
 
     <!-- Toolbar buttons (v0.5.0 restyle) -->
     <string name="toolbar_mute">Mute</string>

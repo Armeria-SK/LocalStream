@@ -2,8 +2,8 @@
 
 The Windows half of **DeskStream**, a low-latency LAN screen streamer. It captures the
 primary display with DXGI Desktop Duplication, converts BGRA→NV12 on the GPU, hardware-
-encodes H.264 through the Windows Media Foundation hardware path (with an optional native
-NVIDIA NVENC experimental backend), and streams per
+encodes H.264 through native NVIDIA NVENC when available (falling back automatically to the
+Windows Media Foundation hardware path on other GPUs), and streams per
 [`../docs/PROTOCOL.md`](../docs/PROTOCOL.md). It also captures the default Windows playback
 device through WASAPI loopback and streams normalized 48 kHz stereo PCM in fixed 5 ms blocks.
 Authenticated clients can also forward mouse, physical keyboard, and game-controller input
@@ -12,7 +12,9 @@ to the interactive Windows desktop.
 ## Requirements
 
 - Windows 10/11 (x64) with NVIDIA NVENC, AMD AMF, or Intel QuickSync hardware H.264.
-  Media Foundation is the stable default. There is **no CPU encoder**; if hardware setup
+  Native NVENC is preferred when an NVIDIA GPU is present (it held a steady 60 fps in
+  side-by-side field comparisons); Media Foundation is the automatic vendor-neutral
+  fallback. There is **no CPU encoder**; if hardware setup
   fails, the server keeps the client connection open and reports the stream error.
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 - Optional for controller forwarding: the
@@ -54,10 +56,13 @@ subsequent connections auto-authenticate (TOFU). Delete that file to force re-pa
 The local dashboard is available at `http://127.0.0.1:47810/` by default. It shows the pairing
 PIN and live stream stats, restarts the active stream, and changes the server default quality.
 
-To explicitly test the experimental native NVIDIA backend, launch from PowerShell with:
+To pin the encoder backend explicitly, launch from PowerShell with:
 
 ```powershell
+# Strict NVENC (fail instead of falling back to Media Foundation):
 $env:DESKSTREAM_ENCODER = "nvenc"
+# Or force Media Foundation even on NVIDIA machines:
+$env:DESKSTREAM_ENCODER = "mf"
 .\DeskStreamer.Server.exe
 ```
 
@@ -93,6 +98,7 @@ See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). Source layout:
 | `Capture/Nv12Converter.cs` | GPU BGRA→NV12 via `ID3D11VideoProcessor` |
 | `Encode/H264Encoder.cs` | Async hardware H.264 MFT (D3D-managed input, CODECAPI controls) |
 | `Encode/NvencH264Encoder.cs` | Native NVENC ULL, single-pass CBR, zero reorder, one-frame VBV |
+| `Encode/EncoderFactory.cs` | Backend selection: NVENC first, Media Foundation fallback |
 | `Encode/MfGuids.cs` / `Encode/NalUtil.cs` | MF/CODECAPI GUIDs; Annex-B NAL scanning |
 | `Net/DiscoveryResponder.cs` | UDP 47800 `DSPROBE1` → `DSREPLY` |
 | `Net/ControlServer.cs` | TCP 47801 length-prefixed JSON, keepalive, single client |

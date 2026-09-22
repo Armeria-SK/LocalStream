@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -43,6 +44,7 @@ import com.deskstream.client.net.StreamStats
 import com.deskstream.client.proto.ServerMessage
 import com.deskstream.client.proto.CursorPosition
 import com.deskstream.client.video.VideoDecoder
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -108,13 +110,16 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var gamepadInventory = GamepadInventory(0, 0, emptyList())
     private var gamepadStatus = "none detected"
     private var gamepadDetail = "Connect a Bluetooth or USB controller to Android"
-    private var exitSnackbar: Snackbar? = null
+    /** Leave confirmation is a modal dialog rather than a Snackbar: a TV remote's D-pad can
+     * focus its buttons, it never auto-dismisses, and Back cancels it. */
+    private var leaveDialog: AlertDialog? = null
     /** Snackbars are outside the XML overlay hierarchy, so keep track of them explicitly. Clean
      * screen dismisses existing bars and suppresses new ones until controls are restored. */
     private val activeSnackbars = mutableSetOf<Snackbar>()
     /** "Clean screen" mode hides the single overlay layer, leaving only the video surface.
-     * Child status and cursor callbacks may continue updating safely because a visible child
-     * cannot escape its hidden parent. */
+     * Status children may keep updating while hidden (a visible child cannot escape its hidden
+     * parent); the remote cursor deliberately lives OUTSIDE that layer so D-pad pointer control
+     * still shows it over the video — see activity_stream.xml. */
     private var controlsHidden = false
 
     // ---- Remote (D-pad) pointer fallback --------------------------------------------------
@@ -261,6 +266,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        leaveDialog?.dismiss()
+        leaveDialog = null
         dismissActiveSnackbars()
         hideMouseGestureHint()
         mouseToolbarCollapseJob?.cancel()
@@ -312,7 +319,23 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
      * the touch toolbar's single click vs. explicit right-click action. Real gamepad D-pad input
      * is already claimed by [gamepadForwarder] above and never reaches here. */
     private fun handleRemotePointerKey(event: KeyEvent): Boolean {
-        if (!(mouseStatus == "live" && mouseEnabledByUser)) return false
+        if (!(mouseStatus == "live" && mouseEnabledByUser)) {
+            // No usable pointer while the overlay is hidden (mouse still negotiating after a
+            // reconnect, or the user disabled it). Returning false here leaves the remote
+            // completely dead: nothing on screen can take focus, so every D-pad press would do
+            // nothing at all. Consume the D-pad keys and reveal the controls instead — the
+            // toolbar is the only way to re-enable the mouse. Non-D-pad keys (volume, etc.)
+            // keep their normal system behavior.
+            val isDpad = when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> true
+                else -> false
+            }
+            if (!isDpad) return false
+            if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) showControls()
+            return true
+        }
         return when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -860,16 +883,21 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
+    /** D-pad-friendly leave confirmation. The old Snackbar variant was effectively unusable
+     * with a TV remote: its action could not be focused reliably with the D-pad and it
+     * auto-dismissed after a few seconds, so LEAVE never happened (or the remote appeared
+     * stuck). A modal dialog waits for an explicit choice and both buttons are focusable. */
     private fun confirmLeave() {
-        if (exitSnackbar?.isShown == true) return
-        exitSnackbar = createSnackbar(
-            getString(R.string.leave_stream_prompt),
-            Snackbar.LENGTH_LONG
-        )?.setAction(R.string.leave_stream_action) {
-            ControlClient.stopStream()
-            finish()
-        }
-        exitSnackbar?.show()
+        if (leaveDialog?.isShowing == true) return
+        leaveDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.leave_stream_prompt)
+            .setPositiveButton(R.string.leave_stream_action) { _, _ ->
+                ControlClient.stopStream()
+                finish()
+            }
+            .setNegativeButton(R.string.leave_stream_cancel, null)
+            .setOnDismissListener { leaveDialog = null }
+            .show()
     }
 
     /** Hides every non-video view. Three-finger hold, Back, or F11 restores the overlay without
@@ -906,7 +934,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         snackbar.addCallback(object : Snackbar.Callback() {
             override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
                 activeSnackbars -= snackbar
-                if (exitSnackbar === snackbar) exitSnackbar = null
             }
         })
         return snackbar
@@ -915,11 +942,11 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun dismissActiveSnackbars() {
         activeSnackbars.toList().forEach { it.dismiss() }
         activeSnackbars.clear()
-        exitSnackbar = null
     }
 
-    /** Hiding the parent layer is intentional: asynchronous reconnect, stats, and cursor updates
-     * can change child visibility without breaking clean-screen mode. */
+    /** Hiding the parent layer is intentional: asynchronous reconnect and status updates can
+     * change child visibility without breaking clean-screen mode. The remote cursor is a
+     * sibling above this layer and keeps its own visibility driven by updateRemoteCursor. */
     private fun applyControlsVisibility() {
         binding.overlayLayer.visibility = if (controlsHidden) View.GONE else View.VISIBLE
         if (controlsHidden) {

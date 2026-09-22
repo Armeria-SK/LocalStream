@@ -89,7 +89,7 @@ public sealed class StreamSession : IDisposable
     private long _lastIdrGenMs = -1000;
     private int _bestTransportMs = int.MaxValue;
     private int _bestDecodeToSurfaceMs = int.MaxValue;
-    // Consecutive stats intervals where p95 latency exceeded the learned baseline. We require a
+    // Consecutive stats intervals where transport p95 sat above the healthy budget. We require a
     // sustained rise (>=3 intervals) before cutting, so a single spike (transient / startup-IDR-
     // contaminated p95 window) cannot slash bitrate.
     private int _latencyGrowingStreak;
@@ -112,7 +112,11 @@ public sealed class StreamSession : IDisposable
     private const int BitrateProbeStepKbps = 500;
     private const int NetworkLatencyBudgetMs = 80;
     private const int NetworkBacklogCutMs = 150;
-    private const int DecoderLatencyBudgetMs = 40;
+    // TV-class MediaCodec pipelines idle at 100-160 ms of decode-queue depth with zero loss
+    // (field logs), so the old absolute 40 ms gate could never be satisfied there and a single
+    // congestion cut became permanently unrecoverable (probing requires this budget).
+    private const int DecoderLatencyBudgetMs = 200;
+    private const int DecoderBaselineSlackMs = 40;
     private const long SlowBitrateReconfigureMs = 50;
 
     // Stats surfaced to the console (Program reads these)
@@ -668,7 +672,8 @@ public sealed class StreamSession : IDisposable
             _streamWidth,
             _streamHeight,
             Fps,
-            _currentBitrateKbps);
+            _currentBitrateKbps,
+            _converter.RegistrationProbe);
         _encoder.OnEncodedFrame = OnEncoded;
 
         // Shape only oversized IDR bursts (token-bucket); normal frames pass untouched.
@@ -1025,14 +1030,15 @@ public sealed class StreamSession : IDisposable
             return;
         }
 
-        // Preserve the healthy floor for the entire stream epoch. The old implementation reset
-        // it after every bitrate change, allowing a 600 ms backlog to become the new "healthy"
-        // baseline and immediately authorizing another increase.
-        bool latencyGrowingNow =
-            (_bestTransportMs != int.MaxValue &&
-             transportP95Ms > _bestTransportMs + 40) ||
-            (_bestDecodeToSurfaceMs != int.MaxValue &&
-             s.DecodeToSurfaceP95Ms > _bestDecodeToSurfaceMs + 25);
+        // Congestion cuts must be judged against the absolute healthy budget, not against the
+        // epoch's best-ever sample: the preserved floor is an all-time minimum, so ordinary
+        // Wi-Fi jitter a few ms above it read as "sustained growth" and ratcheted a healthy
+        // zero-loss stream down every settle window (field logs: 12000 -> 7680 kbps while
+        // framesDropped, FEC repairs and send errors all stayed at 0). Client decode-to-surface
+        // depth is excluded from the cut trigger entirely: TV decoders idle at 100-160 ms of
+        // queue depth without loss, and lowering the server bitrate never reduced it. It still
+        // gates upward probing below via the decoder budget.
+        bool latencyGrowingNow = transportP95Ms > NetworkLatencyBudgetMs;
 
         // Require the rise to persist across >=3 consecutive intervals before reacting.
         // WiFi produces frequent 1-2 interval spikes that are not real congestion.
@@ -1041,9 +1047,15 @@ public sealed class StreamSession : IDisposable
 
         bool dropCongestion = s.FramesDropped >= 3 || dropRate > 0.03;
         bool absoluteNetworkBacklog = transportP95Ms >= NetworkBacklogCutMs;
+        // Decoder budget scales with the stream epoch's healthy decode floor so a TV whose
+        // normal queue depth is already ~150 ms can still probe back up after a cut, while a
+        // decoder backlog growing well beyond that floor keeps probing blocked.
+        int decoderBudgetMs = _bestDecodeToSurfaceMs == int.MaxValue
+            ? DecoderLatencyBudgetMs
+            : Math.Max(DecoderLatencyBudgetMs, _bestDecodeToSurfaceMs + DecoderBaselineSlackMs);
         bool withinLatencyBudget =
             (transportP95Ms < 0 || transportP95Ms <= NetworkLatencyBudgetMs) &&
-            (s.DecodeToSurfaceP95Ms < 0 || s.DecodeToSurfaceP95Ms <= DecoderLatencyBudgetMs);
+            (s.DecodeToSurfaceP95Ms < 0 || s.DecodeToSurfaceP95Ms <= decoderBudgetMs);
         bool clean = s.FramesDropped == 0 && _idrSinceLastStats == 0 &&
             !latencyGrowingNow && withinLatencyBudget;
 
@@ -1054,8 +1066,8 @@ public sealed class StreamSession : IDisposable
                 : absoluteNetworkBacklog
                     ? $"transport backlog p95 {transportP95Ms} ms " +
                       $"(cap {s.CaptureToReceiveP95Ms} - pipe {s.ServerPipelineP95Ms}) >= {NetworkBacklogCutMs} ms"
-                    : $"latency p95 transport {transportP95Ms}>{BaselineStr(_bestTransportMs)}+40 " +
-                      $"dec {s.DecodeToSurfaceP95Ms}>{BaselineStr(_bestDecodeToSurfaceMs)}+25 x{_latencyGrowingStreak}";
+                    : $"transport p95 {transportP95Ms} > {NetworkLatencyBudgetMs} ms budget " +
+                      $"x{_latencyGrowingStreak} (epoch floor {BaselineStr(_bestTransportMs)})";
             AdaptDown(reason);
             _cleanStreak = 0;
         }

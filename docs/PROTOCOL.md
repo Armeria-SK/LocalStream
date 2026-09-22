@@ -399,19 +399,24 @@ Inputs: `STATS` messages and IDR request rate.
 - The effective session ceiling is the smaller of `START_STREAM.maxBitrateKbps` and the
   operator-configured server ceiling (20,000 kbps by default, never below 2,000 kbps).
 - **Down:** if a stats interval has at least 3 dropped frames or more than 3% loss,
-  capture-to-receive p95 reaches 150 ms, latency grows materially for 3 consecutive intervals
-  above the stream's preserved healthy baseline, or at least 3 `REQUEST_IDR` messages arrive
-  within 2 s → new bitrate = max(2000, current × 0.8), apply to the encoder, and send
-  `BITRATE`. Allow 15 s for queued media to drain before another reconfiguration.
+  capture-to-receive p95 reaches 150 ms, transport p95 (capture-to-receive minus
+  `serverPipelineP95Ms`) stays above the 80 ms healthy budget for 3 consecutive intervals,
+  or at least 3 `REQUEST_IDR` messages arrive within 2 s → new bitrate =
+  max(2000, current × 0.8), apply to the encoder, and send `BITRATE`. Allow 15 s for queued
+  media to drain before another reconfiguration. Client decode-to-surface depth never cuts
+  on its own: TV-class decoders idle at 100–160 ms of queue depth with zero loss, and
+  lowering the server bitrate does not reduce it.
 - **Up:** require 10 consecutive clean intervals, capture-to-receive p95 ≤80 ms,
-  decode-to-surface p95 ≤40 ms, at least 15 s since the previous bitrate change, and at least
+  decode-to-surface p95 ≤max(200 ms, stream-epoch healthy decode floor + 40 ms), at least
+  15 s since the previous bitrate change, and at least
   30 s since congestion. Probe by only +500 kbps. A congestion cut pins the remembered ceiling;
   only a full 60 s without congestion permits the ceiling to rise by 500 kbps, at most once
   every 30 s. If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
   disable further upward probes for that stream; emergency downward changes remain available.
 - Start at min(12000, maxBitrateKbps).
-- Optional latency fields do not break older peers. The healthy latency floor is retained for
-  the stream epoch; bitrate changes must not reset it while old UDP data may still be queued.
+- Optional latency fields do not break older peers. The healthy latency floors are retained
+  for the stream epoch as diagnostics (best-ever transport and decode-to-surface samples);
+  bitrate changes must not reset them while old UDP data may still be queued.
   When `serverPipelineP95Ms` is available, subtract it from capture-to-receive latency before
   making a network-congestion decision so host capture/encoding pressure is classified separately.
 

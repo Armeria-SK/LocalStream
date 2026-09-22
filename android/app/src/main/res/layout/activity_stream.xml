@@ -12,22 +12,14 @@
         android:layout_height="match_parent"
         android:layout_gravity="center" />
 
-    <!-- Every non-video element lives in this layer so clean-screen mode can guarantee that
-         later status/cursor callbacks cannot make an overlay visible over the stream. -->
+    <!-- Every non-video status element lives in this layer so clean-screen mode can guarantee
+         that later status callbacks cannot make an overlay visible over the stream. The remote
+         cursor is deliberately NOT here: it sits below, outside this layer, because D-pad
+         pointer control only exists in clean-screen mode and must show the cursor over video. -->
     <FrameLayout
         android:id="@+id/overlayLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-
-    <ImageView
-        android:id="@+id/tvRemoteCursor"
-        android:layout_width="12dp"
-        android:layout_height="18dp"
-        android:contentDescription="@null"
-        android:importantForAccessibility="no"
-        android:scaleType="fitXY"
-        android:src="@drawable/ic_remote_cursor"
-        android:visibility="gone" />
 
     <TextView
         android:id="@+id/tvConnecting"
@@ -320,5 +312,19 @@
         android:textSize="12sp" />
 
     </FrameLayout>
+
+    <!-- Remote-mouse cursor overlay: a sibling ABOVE overlayLayer on purpose. Clean-screen
+         mode hides overlayLayer, but the D-pad pointer (which only exists in clean screen)
+         still has to draw this cursor over the video; StreamActivity controls its visibility
+         via updateRemoteCursor. 16×24dp ≈ the size of a native 1080p PC cursor on a TV. -->
+    <ImageView
+        android:id="@+id/tvRemoteCursor"
+        android:layout_width="16dp"
+        android:layout_height="24dp"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY"
+        android:src="@drawable/ic_remote_cursor"
+        android:visibility="gone" />
 
 </FrameLayout>
