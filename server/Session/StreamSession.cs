@@ -746,9 +746,14 @@ public sealed class StreamSession : IDisposable
                 if (_duplicator!.TryAcquire(100, out var bgra))
                 {
                     long nowTicks = Stopwatch.GetTimestamp();
-                    if (nowTicks < nextFrameTicks)
+                    // Schedule off the ideal grid (nextFrameTicks), not off the arrival time of
+                    // this frame. Advancing from "now" let per-frame acquire jitter accumulate
+                    // into permanent drift, which silently halved 60 Hz capture down to 30 Hz.
+                    if (nowTicks + frameIntervalTicks / 2 < nextFrameTicks)
                         continue; // Desktop may present at 120/144/240 Hz; honor requested FPS.
-                    nextFrameTicks = nowTicks + frameIntervalTicks;
+                    nextFrameTicks = nextFrameTicks + frameIntervalTicks > nowTicks
+                        ? nextFrameTicks + frameIntervalTicks // Stay on the ideal grid.
+                        : nowTicks + frameIntervalTicks;      // Resync after a long idle gap.
 
                     if (Interlocked.Increment(ref _capturedSinceEncode) > Fps * 3)
                         throw new InvalidOperationException("The hardware encoder stopped producing frames");
