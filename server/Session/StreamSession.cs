@@ -897,16 +897,37 @@ public sealed class StreamSession : IDisposable
         {
             long frameIntervalTicks = Math.Max(1, Stopwatch.Frequency / Math.Max(1, Fps));
             long nextFrameTicks = Stopwatch.GetTimestamp();
+            // A frame that arrived too early for the FPS grid is held (the duplicator's private
+            // BGRA copy stays intact until the next real acquisition) instead of discarded.
+            // Discarding lost the LAST frame of any burst — a typed character, the end of a
+            // scroll, a closing menu — whenever it landed early and the desktop then went idle:
+            // the TV kept showing the previous image until something else changed.
+            bool heldFrame = false;
             while (!ct.IsCancellationRequested)
             {
-                if (_duplicator!.TryAcquire(100, out var bgra))
+                int waitMs = 100;
+                if (heldFrame)
                 {
-                    long nowTicks = Stopwatch.GetTimestamp();
+                    long dueTicks = nextFrameTicks - frameIntervalTicks / 2 - Stopwatch.GetTimestamp();
+                    // Round up so a sub-millisecond remainder waits instead of spinning.
+                    waitMs = (int)Math.Clamp((dueTicks * 1000 + Stopwatch.Frequency - 1) / Stopwatch.Frequency, 0, 100);
+                }
+
+                bool acquired = _duplicator!.TryAcquire(waitMs, out var bgra);
+                long nowTicks = Stopwatch.GetTimestamp();
+                if (acquired || heldFrame)
+                {
                     // Schedule off the ideal grid (nextFrameTicks), not off the arrival time of
                     // this frame. Advancing from "now" let per-frame acquire jitter accumulate
                     // into permanent drift, which silently halved 60 Hz capture down to 30 Hz.
                     if (nowTicks + frameIntervalTicks / 2 < nextFrameTicks)
-                        continue; // Desktop may present at 120/144/240 Hz; honor requested FPS.
+                    {
+                        // Desktop may present at 120/144/240 Hz; honor requested FPS. A newer
+                        // acquisition simply replaces the held one (newest-wins).
+                        heldFrame = true;
+                        continue;
+                    }
+                    heldFrame = false;
                     nextFrameTicks = nextFrameTicks + frameIntervalTicks > nowTicks
                         ? nextFrameTicks + frameIntervalTicks // Stay on the ideal grid.
                         : nowTicks + frameIntervalTicks;      // Resync after a long idle gap.

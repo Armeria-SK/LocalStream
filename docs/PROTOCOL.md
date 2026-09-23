@@ -174,7 +174,8 @@ preference order: `"hevc"` (H.265 Main) and/or `"h264"`. Absent means `["h264"]`
 answers with the codec it actually encodes in `STREAM_STARTED.codec` — `"hevc"` only when the
 client offered it and the encoder supports it (NVENC; the Media Foundation fallback is H.264
 only), otherwise `"h264"`. Both are Annex-B with in-band parameter sets (VPS/SPS/PPS for HEVC)
-on every IDR, carried unchanged by §3. An operator can pin H.264 with `LOCALSTREAM_CODEC=h264`.
+on every IDR, carried unchanged by §3. Video is BT.709 **limited range** (16-235), signalled
+in the VUI; limited range is the one every client decode path renders correctly. An operator can pin H.264 with `LOCALSTREAM_CODEC=h264`.
 An Android client offers HEVC only when hardware HEVC decodes 1080p60 and every common
 stream size (720p, 1080p, 1440p, 3440x1440, 2160p) at 60 fps that hardware H.264 decodes.
 
@@ -319,7 +320,9 @@ chunks; chunk `i` goes in the packet with `packetIndex = i`.
   window full and nothing complete, drop only the oldest incomplete frame), count the skipped
   frames as dropped in `STATS`, and send `REQUEST_REFRESH`. The decoder conceals the missing
   reference until the intra-refresh wave has swept the picture. Before the first keyframe and
-  for decoder-side drops the keyframe rule above still applies.
+  for decoder-side drops the keyframe rule above still applies. A client whose decoder stays
+  measurably slower after such a concealment (some TV decoders leave their low-latency output
+  mode until the next IDR) MAY send one `REQUEST_IDR` to reset it.
 - Never delay rendering by PTS. Release decoder output to the surface as soon as it is
   produced.
 

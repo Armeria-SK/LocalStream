@@ -77,14 +77,21 @@ public sealed class Nv12Converter : IDisposable
         _enumerator = _videoDevice.CreateVideoProcessorEnumerator(content);
         _processor = _videoDevice.CreateVideoProcessor(_enumerator, 0);
 
-        // Desktop BGRA is full-range sRGB. Pin the YUV conversion explicitly: BT.709
-        // matrix (driver default is BT.601) and full-range 0-255 output (driver default
-        // is studio 16-235). NvencEncoder.ConfigureVui signals the identical VUI — these
-        // two must stay in sync or players guess and colors shift.
+        // Desktop BGRA is full-range sRGB; say so explicitly rather than trusting the driver.
+        _videoContext.VideoProcessorSetStreamColorSpace(_processor, 0, new VideoProcessorColorSpace
+        {
+            RGB_Range = 0, // 0-255 input
+        });
+        // Pin the YUV conversion: BT.709 matrix (driver default is BT.601) and limited/studio
+        // 16-235 output. Limited range is what every decoder path renders correctly: many
+        // Android TV video planes and SDL's YUV textures (Switch) ignore the full-range flag
+        // and crush blacks / clip whites, and the Media Foundation encoder never signalled
+        // full range at all. NvencEncoder.ConfigureVui signals the identical VUI — these two
+        // must stay in sync or players guess and colors shift.
         _videoContext.VideoProcessorSetOutputColorSpace(_processor, new VideoProcessorColorSpace
         {
             YCbCr_Matrix = 1,  // BT.709
-            Nominal_Range = 2, // 0-255 (D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_0_255)
+            Nominal_Range = 1, // 16-235 (D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_16_235)
         });
 
         var outDesc = new VideoProcessorOutputViewDescription

@@ -237,9 +237,11 @@ try
             long pointerDelta = Math.Max(0, capPointer - prevCapPointer);
             long timeoutDelta = Math.Max(0, capTimeouts - prevCapTimeouts);
             long accumDelta = Math.Max(0, capAccum - prevCapAccum);
-            // presents/s ~= Δaccumulated + Δreal: distinguishes "content is only N fps" from
-            // "the pipeline is dropping presents" when reading these logs later.
-            long presentsPerSec = accumDelta + realDelta;
+            // presents/s = Δaccumulated: DXGI's AccumulatedFrames already counts the acquired
+            // present itself, so adding Δreal double-counted (~2x) and made content that only
+            // updates at ~45 fps read as a capture bottleneck. Distinguishes "content is only
+            // N fps" from "the pipeline is dropping presents".
+            long presentsPerSec = accumDelta;
 
             prevEncoded = enc;
             prevIdr = idr;

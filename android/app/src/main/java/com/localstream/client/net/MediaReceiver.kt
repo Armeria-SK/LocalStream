@@ -92,6 +92,10 @@ class MediaReceiver(
     private val fecPacketsReceived = AtomicInteger(0)
     private val bytesReceived = AtomicLong(0)
 
+    /** Requests one IDR if a decoder stays slow after concealing a skipped frame. Declared
+     * before [frameAssembler], whose gap-skip callback feeds it. */
+    private val concealmentGuard = ConcealmentLatencyGuard { SystemClock.elapsedRealtime() }
+
     private val frameAssembler = FrameAssembler(
         bufferPool = bufferPool,
         onFrameComplete = { buf, len, keyframe, frameId, ptsMs, pipelineDelayMs ->
@@ -115,6 +119,7 @@ class MediaReceiver(
             framesDropped.addAndGet(skippedFrames)
             assemblyFramesDropped.addAndGet(skippedFrames)
             ControlClient.requestRefresh()
+            concealmentGuard.onGapSkipped()
         }
     )
 
@@ -283,6 +288,10 @@ class MediaReceiver(
     fun recordDecodedFrame(latencyMs: Int) {
         framesDecoded.incrementAndGet()
         if (latencyMs >= 0) decoderLatency.add(latencyMs)
+        if (concealmentGuard.onFrameDecoded(latencyMs)) {
+            Log.i(TAG, "decoder stayed slow after a concealed gap; requesting one IDR to reset it")
+            ControlClient.requestIdr()
+        }
     }
 
     private fun receiveLoop(sock: DatagramSocket, serverAddress: InetAddress) {

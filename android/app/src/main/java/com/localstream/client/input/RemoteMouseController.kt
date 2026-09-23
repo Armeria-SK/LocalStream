@@ -115,12 +115,26 @@ class RemoteMouseController(
         pendingDx += dx
         pendingDy += dy
         val now = SystemClock.elapsedRealtimeNanos()
-        if (now - lastMotionSentAtNanos < MIN_SEND_INTERVAL_NANOS) return
+        if (now - lastMotionSentAtNanos < MIN_SEND_INTERVAL_NANOS) {
+            // Inside the 120 Hz window: this delta is only accumulated. The phone may send
+            // nothing more (finger stopped), so schedule a flush — otherwise the tail of every
+            // swipe and slow single-pixel moves sat unsent until the next gesture.
+            target.removeCallbacks(phoneMotionFlush)
+            target.postDelayed(phoneMotionFlush, PHONE_FLUSH_DELAY_MS)
+            return
+        }
+        flushPhoneMotion()
+    }
+
+    private val phoneMotionFlush = Runnable { if (enabled) flushPhoneMotion() }
+
+    private fun flushPhoneMotion() {
+        target.removeCallbacks(phoneMotionFlush)
         val x = pendingDx.roundToInt()
         val y = pendingDy.roundToInt()
         pendingDx -= x
         pendingDy -= y
-        if (x != 0 || y != 0) send(MousePacket.MODE_RELATIVE, x, y, 0, 0)
+        if (x != 0 || y != 0) send(MousePacket.MODE_RELATIVE, x, y, 0, 0, force = true)
     }
 
     /** Two-finger swipe from the phone, in wheel units (same unit as TV-touch scroll). */
@@ -147,6 +161,7 @@ class RemoteMouseController(
     }
 
     fun reset() {
+        target.removeCallbacks(phoneMotionFlush)
         if (leftHeld) sendButton("left", false)
         leftHeld = false
         clearPendingTap()
@@ -495,5 +510,7 @@ class RemoteMouseController(
         private const val CLEAN_SCREEN_REVEAL_HOLD_MS = 600L
         private const val CLEAN_SCREEN_SLOP_MULTIPLIER = 2f
         private const val MIN_SEND_INTERVAL_NANOS = 1_000_000_000L / 120L
+        /** Just past one 120 Hz send window, so a flush never races the coalescer. */
+        private const val PHONE_FLUSH_DELAY_MS = 9L
     }
 }

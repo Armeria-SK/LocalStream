@@ -1521,7 +1521,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         private const val AUDIO_NEGOTIATION_TIMEOUT_MS = 3500L
         private const val INPUT_NEGOTIATION_TIMEOUT_MS = 2500L
         // D-pad-as-mouse fallback (clean-screen only; see handleRemotePointerKey).
-        private const val REMOTE_POINTER_STEP_DP = 14f
+        // 6 dp per 40 ms tick (was 14): ~43% of the old speed and of the distance one press
+        // jumps. Both values stay in the same gain band of RemoteMouseController, so the
+        // reduction is exactly proportional.
+        private const val REMOTE_POINTER_STEP_DP = 6f
         private const val REMOTE_POINTER_REPEAT_MS = 40L
         private const val REMOTE_POINTER_LONG_PRESS_MS = 500L
     }

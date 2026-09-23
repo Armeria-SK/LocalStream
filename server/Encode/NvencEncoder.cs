@@ -253,7 +253,7 @@ public sealed class NvencEncoder : IVideoEncoder
     }
 
     /// <summary>
-    /// Explicit color signaling: BT.709 primaries/transfer/matrix, full range 0-255. MUST match
+    /// Explicit color signaling: BT.709 primaries/transfer/matrix, limited range 16-235. MUST match
     /// Nv12Converter's VideoProcessorSetOutputColorSpace — otherwise players guess (commonly
     /// BT.601 limited) and desktop/game colors visibly shift.
     ///
@@ -266,7 +266,7 @@ public sealed class NvencEncoder : IVideoEncoder
     {
         vui.VideoSignalTypePresentFlag = 1;
         vui.VideoFormat = NvEncVuiVideoFormat.Unspecified;
-        vui.VideoFullRangeFlag = 1;
+        vui.VideoFullRangeFlag = 0; // limited 16-235, matching Nv12Converter
         vui.ColourDescriptionPresentFlag = 1;
         vui.ColourPrimaries = NvEncVuiColorPrimaries.Bt709;
         vui.TransferCharacteristics = NvEncVuiTransferCharacteristic.Bt709;
