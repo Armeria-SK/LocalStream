@@ -1,0 +1,26 @@
+# .NET
+server/bin/
+server/obj/
+server/publish/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+
+# macOS native client
+macos/build/
+*.app
+*.dmg
+
+# OS
+.DS_Store
+Thumbs.db
+stutter-fix-win-x64
+# Kotlin compiler daemon state / crash logs
+.kotlin/

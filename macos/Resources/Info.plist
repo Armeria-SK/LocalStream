@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>LocalStream</string>
+    <key>CFBundleExecutable</key>
+    <string>LocalStream</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.localstream.client.macos</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>LocalStream</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.5.3</string>
+    <key>CFBundleVersion</key>
+    <string>11</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>LocalStream discovers and connects to your Windows streaming server on the local network.</string>
+    <key>GCSupportsControllerUserInteraction</key>
+    <true/>
+</dict>
+</plist>

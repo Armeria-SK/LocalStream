@@ -1,0 +1,26 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.LocalStream" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryDark">@color/purple_700</item>
+        <item name="colorAccent">@color/teal_200</item>
+    </style>
+
+    <style name="Theme.LocalStream.Main" parent="Theme.LocalStream">
+        <item name="android:windowBackground">@color/bg_dark</item>
+    </style>
+
+    <style name="Theme.LocalStream.Fullscreen" parent="Theme.LocalStream">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/black</item>
+        <item name="android:navigationBarColor" tools:targetApi="lollipop">@color/black</item>
+        <item name="android:statusBarColor" tools:targetApi="lollipop">@color/black</item>
+    </style>
+
+    <!-- Stream-toolbar MaterialButton: same TextButton metrics, but D-pad focus, selection
+         and press light the pill (toolbar_button_bg selector) so a TV remote always shows
+         where it has landed — the stock dark state was invisible on the dark toolbar. -->
+    <style name="Widget.LocalStream.ToolbarButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="backgroundTint">@color/toolbar_button_bg</item>
+    </style>
+</resources>
