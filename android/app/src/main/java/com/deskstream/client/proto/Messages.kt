@@ -1,5 +1,6 @@
 package com.deskstream.client.proto
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -54,12 +55,26 @@ object ClientMessages {
      * The client always sizes its decoder from `STREAM_STARTED.width/height`, never from this
      * request, so a server that ignores or rejects the field cannot desync the client.
      */
-    fun startStream(maxBitrateKbps: Int, fps: Int, quality: String = "native"): String =
+    /**
+     * [codecs] lists the codecs this device decodes in hardware, in preference order
+     * ("hevc", "h264"); [recovery] the loss-recovery modes it implements ("refresh" = keeps
+     * decoding across a lost frame and sends REQUEST_REFRESH). Both are optional on the wire
+     * (§2.3): a server that ignores them streams H.264 with IDR recovery, as before.
+     */
+    fun startStream(
+        maxBitrateKbps: Int,
+        fps: Int,
+        quality: String = "native",
+        codecs: List<String> = listOf("h264"),
+        recovery: List<String> = emptyList()
+    ): String =
         JSONObject().apply {
             put("type", "START_STREAM")
             put("maxBitrateKbps", maxBitrateKbps)
             put("fps", fps)
             put("quality", quality)
+            put("codecs", JSONArray(codecs))
+            put("recovery", JSONArray(recovery))
         }.toString()
 
     fun mediaReady(port: Int): String =
@@ -178,6 +193,12 @@ object ClientMessages {
             put("type", "REQUEST_IDR")
         }.toString()
 
+    /** Loss repair on a refresh-recovery stream (§2.3): one intra-refresh wave, no IDR. */
+    fun requestRefresh(): String =
+        JSONObject().apply {
+            put("type", "REQUEST_REFRESH")
+        }.toString()
+
     fun stats(
         framesOk: Int,
         framesAssembled: Int,
@@ -233,6 +254,8 @@ sealed class ServerMessage {
         val height: Int,
         val fps: Int,
         val codec: String,
+        /** "refresh" when the server repairs loss with intra refresh (§2.3), else "idr". */
+        val recovery: String,
         val encoderBackend: String,
         val clockBaseUs: Long
     ) : ServerMessage()
@@ -292,6 +315,7 @@ sealed class ServerMessage {
                     height = obj.optInt("height", 0),
                     fps = obj.optInt("fps", 0),
                     codec = obj.optString("codec", "h264"),
+                    recovery = obj.optString("recovery", "idr"),
                     encoderBackend = obj.optString("encoderBackend", "media-foundation"),
                     clockBaseUs = obj.optLong("clockBaseUs", 0L)
                 )

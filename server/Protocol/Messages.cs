@@ -84,6 +84,14 @@ public sealed class StartStreamMessage
 
     /// <summary>Optional per-stream quality: "native" (default) or "720p". Absent = server default.</summary>
     [JsonPropertyName("quality")] public string? Quality { get; set; }
+
+    /// <summary>Optional codecs the client can decode in hardware, in preference order
+    /// ("hevc", "h264"). Absent = H.264 only (every pre-HEVC client).</summary>
+    [JsonPropertyName("codecs")] public string[]? Codecs { get; set; }
+
+    /// <summary>Optional loss-recovery modes the client implements. "refresh" = it keeps
+    /// decoding across a lost frame and sends REQUEST_REFRESH (PROTOCOL.md §2.3).</summary>
+    [JsonPropertyName("recovery")] public string[]? Recovery { get; set; }
 }
 
 public sealed class EndpointReadyMessage
@@ -174,8 +182,9 @@ public static class OutgoingMessages
     public static object Error(string code, string message) => new { type = "ERROR", code, message };
 
     public static object StreamStarted(
-        int mediaPort, int width, int height, int fps, string encoderBackend, long clockBaseUs) =>
-        new { type = "STREAM_STARTED", mediaPort, width, height, fps, codec = "h264", encoderBackend, clockBaseUs };
+        int mediaPort, int width, int height, int fps, string codec, string recovery,
+        string encoderBackend, long clockBaseUs) =>
+        new { type = "STREAM_STARTED", mediaPort, width, height, fps, codec, recovery, encoderBackend, clockBaseUs };
 
     public static object AudioStarted(int audioPort) =>
         new

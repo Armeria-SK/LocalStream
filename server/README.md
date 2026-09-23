@@ -102,7 +102,7 @@ See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). Source layout:
 | `Capture/DesktopDuplicator.cs` | DXGI Output Duplication + shared D3D11 device |
 | `Capture/Nv12Converter.cs` | GPU BGRA→NV12 via `ID3D11VideoProcessor` |
 | `Encode/H264Encoder.cs` | Async hardware H.264 MFT (D3D-managed input, CODECAPI controls) |
-| `Encode/NvencH264Encoder.cs` | Native NVENC ULL, single-pass CBR, zero reorder, one-frame VBV |
+| `Encode/NvencEncoder.cs` | Native NVENC ULL (HEVC → H.264 fallback), single-pass CBR, zero reorder, one-frame VBV, on-demand intra-refresh loss recovery |
 | `Encode/EncoderFactory.cs` | Backend selection: NVENC first, Media Foundation fallback |
 | `Encode/MfGuids.cs` / `Encode/NalUtil.cs` | MF/CODECAPI GUIDs; Annex-B NAL scanning |
 | `Net/DiscoveryResponder.cs` | UDP 47800 `DSPROBE1` → `DSREPLY` |

@@ -72,7 +72,9 @@ public sealed class RemoteMouseManager : IDisposable
         }
     }
 
-    private static CursorPosition? GetNormalizedCursorPosition()
+    /// <summary>Current host pointer normalized to 0..65535 on the primary display, the same
+    /// space as DSMC and absolute DSMI; null when Windows cannot report it.</summary>
+    public static CursorPosition? GetNormalizedCursorPosition()
     {
         if (!GetCursorPos(out NativePoint point)) return null;
         int width = GetSystemMetrics(0);

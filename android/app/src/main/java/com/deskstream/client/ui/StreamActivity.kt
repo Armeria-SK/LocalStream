@@ -133,6 +133,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var lastStreamHeight = 0
     private var lastStreamFps = 0
     private var lastStreamCodec = "h264"
+    private var lastStreamRecovery = "idr"
+    /** START_STREAM codec offer (§2.3). Codec enumeration is slow-ish and fixed per device,
+     * so it runs once per Activity. */
+    private val offeredCodecs by lazy { VideoDecoder.supportedCodecs() }
     private var lastEncoderBackend = "media-foundation"
     private var mouseStatus = "negotiating"
     private var mouseEnabledByUser = true
@@ -587,7 +591,13 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             } else {
                 MAX_NATIVE_BITRATE_KBPS
             }
-            ControlClient.startStream(maxBitrateKbps, TARGET_FPS, streamQuality)
+            ControlClient.startStream(
+                maxBitrateKbps,
+                TARGET_FPS,
+                streamQuality,
+                codecs = offeredCodecs,
+                recovery = listOf("refresh")
+            )
         }
     }
 
@@ -599,6 +609,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         lastStreamHeight = msg.height
         lastStreamFps = msg.fps
         lastStreamCodec = msg.codec
+        lastStreamRecovery = msg.recovery
         lastEncoderBackend = msg.encoderBackend
         negotiatedBitrateKbps = 0
         lastVideoStats = null
@@ -681,11 +692,12 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     }
                 }
             },
-            onStartupError = { detail -> mediaStartupError = detail }
+            onStartupError = { detail -> mediaStartupError = detail },
+            refreshRecovery = msg.recovery == "refresh"
         )
         mediaReceiver = receiver
         videoDecoder = decoder
-        decoder.resetForNewStream(holder.surface, msg.width, msg.height, msg.fps)
+        decoder.resetForNewStream(holder.surface, msg.width, msg.height, msg.fps, msg.codec)
         if (!receiver.start(ControlClient.serverIp, msg.mediaPort, msg.clockBaseUs)) {
             mediaReceiver = null
             videoDecoder = null
@@ -1331,7 +1343,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val audio = lastAudioStats
         binding.tvStats.text = buildString {
             append("STATE  LIVE · ${ControlClient.serverIp}\n")
-            append("VIDEO  ${lastStreamWidth}×${lastStreamHeight} @ $lastStreamFps · ${lastStreamCodec.uppercase()}\n")
+            append("VIDEO  ${lastStreamWidth}×${lastStreamHeight} @ $lastStreamFps · ${lastStreamCodec.uppercase()} · $lastStreamRecovery recovery\n")
             append("ENC    $lastEncoderBackend")
             if (negotiatedBitrateKbps > 0) append(" · $negotiatedBitrateKbps kbps target")
             append('\n')
