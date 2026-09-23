@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 
-namespace DeskStreamer.Server.Logging;
+namespace LocalStream.Server.Logging;
 
 public static class AsyncLogger
 {
@@ -37,7 +37,7 @@ public static class AsyncLogger
             _logPath = logPath;
             _enabled = true;
 
-            Info("=== DeskStream Server Log Started ===");
+            Info("=== LocalStream Server Log Started ===");
         }
         catch (Exception ex)
         {

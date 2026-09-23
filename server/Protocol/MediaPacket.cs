@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace DeskStreamer.Server.Protocol;
+namespace LocalStream.Server.Protocol;
 
 /// <summary>
 /// Media datagram header helpers. Wire layout is defined in PROTOCOL.md §3 and is

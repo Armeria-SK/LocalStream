@@ -1,9 +1,10 @@
-# DeskStreamer.Server
+# LocalStream.Server
 
-The Windows half of **DeskStream**, a low-latency LAN screen streamer. It captures the
+The Windows half of **LocalStream**, a low-latency LAN screen streamer. It captures the
 primary display with DXGI Desktop Duplication, converts BGRA→NV12 on the GPU, hardware-
-encodes H.264 through native NVIDIA NVENC when available (falling back automatically to the
-Windows Media Foundation hardware path on other GPUs), and streams per
+encodes HEVC (when the client can decode it) or H.264 through native NVIDIA NVENC when
+available (falling back automatically to the Windows Media Foundation H.264 hardware path on
+other GPUs), and streams per
 [`../docs/PROTOCOL.md`](../docs/PROTOCOL.md). It also captures the default Windows playback
 device through WASAPI loopback and streams normalized 48 kHz stereo PCM in fixed 5 ms blocks.
 Authenticated clients can also forward mouse, physical keyboard, and game-controller input
@@ -50,9 +51,9 @@ subsequent connections auto-authenticate (TOFU). Delete that file to force re-pa
 - `--web-port N` changes the dashboard port from 47810, `--no-web` disables it, and `--web-lan`
   binds it to LAN interfaces instead of loopback. LAN mode is unauthenticated and exposes the
   pairing PIN, so use it only on a trusted private network.
-- `--headless` writes lifecycle, pairing, and error output to `deskstream.log` beside the
+- `--headless` writes lifecycle, pairing, and error output to `localstream.log` beside the
   executable. It suppresses the 1 Hz stats line (live stats remain in the dashboard) and keeps
-  only `deskstream.log` plus `deskstream.previous.log` across restarts.
+  only `localstream.log` plus `localstream.previous.log` across restarts.
 - `--install-autostart` (run from the published `.exe`, not `dotnet run`) creates an interactive,
   per-user logon Scheduled Task; add `--elevated`
   to run it at the highest available privilege. `--uninstall-autostart` removes the task. This
@@ -65,11 +66,15 @@ To pin the encoder backend explicitly, launch from PowerShell with:
 
 ```powershell
 # Strict NVENC (fail instead of falling back to Media Foundation):
-$env:DESKSTREAM_ENCODER = "nvenc"
+$env:LOCALSTREAM_ENCODER = "nvenc"
 # Or force Media Foundation even on NVIDIA machines:
-$env:DESKSTREAM_ENCODER = "mf"
-.\DeskStreamer.Server.exe
+$env:LOCALSTREAM_ENCODER = "mf"
+# Keep H.264 even for HEVC-capable clients:
+$env:LOCALSTREAM_CODEC = "h264"
+.\LocalStream.Server.exe
 ```
+
+The pre-rename `DESKSTREAM_*` names are still read as a fallback.
 
 ## Firewall
 
@@ -84,12 +89,12 @@ Defender Firewall prompt — approve it for Private networks):
 
 ```powershell
 # Optional explicit rules (run in an elevated PowerShell):
-New-NetFirewallRule -DisplayName "DeskStream discovery" -Direction Inbound -Protocol UDP -LocalPort 47800 -Profile Private -Action Allow
-New-NetFirewallRule -DisplayName "DeskStream control"   -Direction Inbound -Protocol TCP -LocalPort 47801 -Profile Private -Action Allow
-New-NetFirewallRule -DisplayName "DeskStream media"     -Direction Inbound -Protocol UDP -LocalPort 47802 -Profile Private -Action Allow
-New-NetFirewallRule -DisplayName "DeskStream audio"     -Direction Inbound -Protocol UDP -LocalPort 47803 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "LocalStream discovery" -Direction Inbound -Protocol UDP -LocalPort 47800 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "LocalStream control"   -Direction Inbound -Protocol TCP -LocalPort 47801 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "LocalStream media"     -Direction Inbound -Protocol UDP -LocalPort 47802 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "LocalStream audio"     -Direction Inbound -Protocol UDP -LocalPort 47803 -Profile Private -Action Allow
 # Only if using --web-lan:
-New-NetFirewallRule -DisplayName "DeskStream dashboard" -Direction Inbound -Protocol TCP -LocalPort 47810 -Profile Private -Action Allow
+New-NetFirewallRule -DisplayName "LocalStream dashboard" -Direction Inbound -Protocol TCP -LocalPort 47810 -Profile Private -Action Allow
 ```
 
 ## Architecture

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace DeskStreamer.Server.Session;
+namespace LocalStream.Server.Session;
 
 /// <summary>
 /// TOFU pairing store (PROTOCOL.md §2.2). Persists clientId -> token in

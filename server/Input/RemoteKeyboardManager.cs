@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
-namespace DeskStreamer.Server.Input;
+namespace LocalStream.Server.Input;
 
 /// <summary>
 /// Injects ordered USB HID keyboard-page transitions into the interactive Windows desktop.

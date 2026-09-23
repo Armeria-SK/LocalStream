@@ -272,7 +272,7 @@ static void TestDiscoveryModels(void) {
 }
 
 static void TestUDPSocket(void) {
-    dispatch_queue_t queue = dispatch_queue_create("com.deskstream.tests.udp", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_t queue = dispatch_queue_create("com.localstream.tests.udp", DISPATCH_QUEUE_SERIAL);
     dispatch_semaphore_t received = dispatch_semaphore_create(0);
     __block NSData *receivedData = nil;
     NSError *error = nil;
@@ -320,7 +320,7 @@ static void TestUDPSocket(void) {
                                          dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC));
     DSAssert(early != 0, @"Reject UDP packet from unexpected source port");
 
-    NSData *expected = [@"deskstream" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *expected = [@"localstream" dataUsingEncoding:NSUTF8StringEncoding];
     DSAssert([sender sendData:expected toHost:@"127.0.0.1" port:receiver.localPort error:&error],
              @"Send validated UDP packet: %@", error);
     long wait = dispatch_semaphore_wait(received,
@@ -432,7 +432,7 @@ static void TestControlClient(void) {
         dispatch_semaphore_signal(serverFinished);
     });
 
-    dispatch_queue_t callbacks = dispatch_queue_create("com.deskstream.tests.control", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_t callbacks = dispatch_queue_create("com.localstream.tests.control", DISPATCH_QUEUE_SERIAL);
     dispatch_semaphore_t replyReceived = dispatch_semaphore_create(0);
     dispatch_semaphore_t disconnected = dispatch_semaphore_create(0);
     __block DSControlClient *client = nil;
@@ -469,8 +469,8 @@ static void TestControlClient(void) {
 }
 
 static void TestCredentialStoreConstruction(void) {
-    DSCredentialStore *store = [[DSCredentialStore alloc] initWithService:@"com.deskstream.tests"];
-    DSAssert([store.service isEqual:@"com.deskstream.tests"], @"Credential store service isolation");
+    DSCredentialStore *store = [[DSCredentialStore alloc] initWithService:@"com.localstream.tests"];
+    DSAssert([store.service isEqual:@"com.localstream.tests"], @"Credential store service isolation");
 }
 
 int main(void) {
@@ -483,10 +483,10 @@ int main(void) {
         TestCredentialStoreConstruction();
 
         if (DSFailures == 0) {
-            printf("DeskStream macOS core tests passed.\n");
+            printf("LocalStream macOS core tests passed.\n");
             return 0;
         }
-        fprintf(stderr, "%d DeskStream macOS core test(s) failed.\n", DSFailures);
+        fprintf(stderr, "%d LocalStream macOS core test(s) failed.\n", DSFailures);
         return 1;
     }
 }

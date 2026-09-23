@@ -14,7 +14,7 @@ typedef void (^DSControlStateHandler)(DSControlState state);
 typedef void (^DSControlErrorHandler)(NSError *error);
 typedef void (^DSReconnectHandler)(NSUInteger attempt, NSTimeInterval delay);
 
-/// DeskStream's TCP control transport: UInt32-BE framed UTF-8 JSON, TCP_NODELAY, FIFO
+/// LocalStream's TCP control transport: UInt32-BE framed UTF-8 JSON, TCP_NODELAY, FIFO
 /// writes, two-second PING, six-second silence watchdog, and bounded reconnect backoff.
 @interface DSControlClient : NSObject
 

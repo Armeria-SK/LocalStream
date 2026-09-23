@@ -1,4 +1,4 @@
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>
 /// Minimal Annex-B NAL scanning: enough to detect SPS presence and to lift the

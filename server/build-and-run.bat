@@ -1,7 +1,7 @@
 @echo off
 setlocal
 rem ===========================================================================
-rem  DeskStream server - build and launch helper
+rem  LocalStream server - build and launch helper
 rem
 rem   Double-click, or from a terminal:
 rem     build-and-run.bat                 build + start with default options
@@ -12,16 +12,16 @@ rem   The build is incremental, so rerunning after a source change only takes
 rem   a couple of seconds. Stops with Ctrl+C.
 rem
 rem   Encoder selection is automatic (NVENC first, Media Foundation fallback).
-rem   To pin it, set DESKSTREAM_ENCODER=nvenc or DESKSTREAM_ENCODER=mf before
+rem   To pin it, set LOCALSTREAM_ENCODER=nvenc or LOCALSTREAM_ENCODER=mf before
 rem   running this script.
 rem ===========================================================================
 cd /d "%~dp0"
-title DeskStream Server
+title LocalStream Server
 
 echo ============================================================
-echo  DeskStream server - build and run (Release)
-if defined DESKSTREAM_ENCODER (
-    echo  encoder: DESKSTREAM_ENCODER=%DESKSTREAM_ENCODER%
+echo  LocalStream server - build and run (Release)
+if defined LOCALSTREAM_ENCODER (
+    echo  encoder: LOCALSTREAM_ENCODER=%LOCALSTREAM_ENCODER%
 ) else (
     echo  encoder: automatic - NVENC first, Media Foundation fallback
 )

@@ -1,6 +1,7 @@
 using Vortice.Direct3D11;
+using LocalStream.Server.Session;
 
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 public static class EncoderFactory
 {
@@ -13,7 +14,7 @@ public static class EncoderFactory
         bool allowHevc,
         ID3D11Texture2D? registrationProbe = null)
     {
-        string requested = Environment.GetEnvironmentVariable("DESKSTREAM_ENCODER")?
+        string requested = ServerOptions.GetEnv("ENCODER")?
             .Trim().ToLowerInvariant() ?? "";
 
         if (requested is "mf" or "media-foundation" or "mediafoundation")
@@ -27,7 +28,7 @@ public static class EncoderFactory
         // path rejected candidates (E_OUTOFMEMORY / MF_E_INVALIDTYPE) and oscillated between
         // 3-59 fps. NVENC is therefore the preferred default. Media Foundation remains the
         // vendor-neutral fallback for non-NVIDIA GPUs and for any NVENC init/registration
-        // failure, so a machine without NVIDIA support still streams. DESKSTREAM_ENCODER=nvenc
+        // failure, so a machine without NVIDIA support still streams. LOCALSTREAM_ENCODER=nvenc
         // makes the preference strict (no fallback) for debugging.
         try
         {

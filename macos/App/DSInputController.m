@@ -111,7 +111,7 @@ static NSDictionary<NSNumber *, NSNumber *> *DSMacKeyToHIDUsage(void) {
         _sendDatagram = [sendDatagram copy];
         _sendControl = [sendControl copy];
         _pressedUsages = [NSMutableSet set];
-        _motionQueue = dispatch_queue_create("com.deskstream.macos.input", DISPATCH_QUEUE_SERIAL);
+        _motionQueue = dispatch_queue_create("com.localstream.macos.input", DISPATCH_QUEUE_SERIAL);
         dispatch_queue_set_specific(_motionQueue, DSInputQueueKey, (void *)DSInputQueueKey, NULL);
         _motionTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _motionQueue);
         dispatch_source_set_timer(_motionTimer, dispatch_time(DISPATCH_TIME_NOW, 0),

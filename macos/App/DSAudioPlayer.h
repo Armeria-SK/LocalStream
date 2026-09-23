@@ -2,7 +2,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Bounded low-latency PCM16 player for DeskStream's 5 ms audio datagrams.
+/// Bounded low-latency PCM16 player for LocalStream's 5 ms audio datagrams.
 @interface DSAudioPlayer : NSObject
 
 @property (atomic, getter=isMuted) BOOL muted;

@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
 using Lennox.NvEncSharp;
-using DeskStreamer.Server.Logging;
+using LocalStream.Server.Logging;
 using Vortice.Direct3D11;
 using static Lennox.NvEncSharp.LibNvEnc;
 
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>
 /// Native NVIDIA NVENC backend (HEVC or H.264). Encoding is synchronous and has exactly one

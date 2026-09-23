@@ -4,11 +4,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using DeskStreamer.Server.Net;
-using DeskStreamer.Server.Protocol;
-using DeskStreamer.Server.Session;
+using LocalStream.Server.Net;
+using LocalStream.Server.Protocol;
+using LocalStream.Server.Session;
 
-namespace DeskStreamer.Server.Web;
+namespace LocalStream.Server.Web;
 
 /// <summary>
 /// A dependency-free, <see cref="TcpListener"/>-based local status dashboard. It serves a
@@ -521,7 +521,7 @@ public sealed class WebDashboard : IDisposable
     private const string DashboardHtml = """
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DeskStream</title>
+<title>LocalStream</title>
 <style>
   :root {
     --bg:#f4f5f7; --card:#ffffff; --fg:#1b1f24; --muted:#6b7480; --line:#e3e6ea;
@@ -571,7 +571,7 @@ public sealed class WebDashboard : IDisposable
 </style>
 <div class="wrap">
   <header>
-    <h1>DeskStream</h1>
+    <h1>LocalStream</h1>
     <span class="sub" id="hdr"></span>
   </header>
   <div class="sub" id="listen"></div>

@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Protocol;
 
-namespace DeskStreamer.Server.Net;
+namespace LocalStream.Server.Net;
 
 /// <summary>
 /// Discovery responder (PROTOCOL.md §1). Listens on UDP 47800 for the 8 ASCII bytes

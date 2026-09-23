@@ -2,11 +2,11 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using DeskStreamer.Server.Logging;
-using DeskStreamer.Server.Protocol;
-using DeskStreamer.Server.Session;
+using LocalStream.Server.Logging;
+using LocalStream.Server.Protocol;
+using LocalStream.Server.Session;
 
-namespace DeskStreamer.Server.Net;
+namespace LocalStream.Server.Net;
 
 /// <summary>
 /// Control channel (PROTOCOL.md §2): TCP 47801, length-prefixed (uint32 BE) UTF-8 JSON.

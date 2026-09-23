@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.deskstream.client"
+    namespace = "com.localstream.client"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.deskstream.client"
+        applicationId = "com.localstream.client"
         minSdk = 26
         targetSdk = 34
         versionCode = 22

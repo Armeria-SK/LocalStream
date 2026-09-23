@@ -92,7 +92,7 @@ static void DSAppendNALRanges(const uint8_t *bytes, NSUInteger length, NSMutable
         self.layer = _displayLayer;
         dispatch_queue_attr_t conversionAttributes = dispatch_queue_attr_make_with_qos_class(
             DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
-        _conversionQueue = dispatch_queue_create("com.deskstream.macos.h264", conversionAttributes);
+        _conversionQueue = dispatch_queue_create("com.localstream.macos.h264", conversionAttributes);
 
         if (@available(macOS 14.0, *)) {
             [[NSNotificationCenter defaultCenter]

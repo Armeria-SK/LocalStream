@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Protocol;
 
-namespace DeskStreamer.Server.Net;
+namespace LocalStream.Server.Net;
 
 /// <summary>
 /// Media transport (PROTOCOL.md §3). Splits each encoded H.264 access unit into

@@ -22,3 +22,5 @@ macos/build/
 .DS_Store
 Thumbs.db
 stutter-fix-win-x64
+# Kotlin compiler daemon state / crash logs
+.kotlin/

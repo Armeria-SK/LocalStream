@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace DeskStreamer.Server.Protocol;
+namespace LocalStream.Server.Protocol;
 
 /// <summary>One complete Android gamepad state snapshot (PROTOCOL.md §3B).</summary>
 public readonly record struct GamepadState(

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace DeskStreamer.Server.Net;
+namespace LocalStream.Server.Net;
 
 /// <summary>
 /// Binds a UDP socket to a fixed port with a short retry, falling back to an ephemeral
@@ -36,7 +36,7 @@ internal static class UdpPortBinder
                 Console.Error.WriteLine(
                     $"[ports] WARNING: {label} UDP port {preferredPort} still unavailable after " +
                     $"{RetryAttempts} retries ({ex.SocketErrorCode}). Falling back to an ephemeral " +
-                    "port. Another DeskStream instance may already be running — stop it or pass " +
+                    "port. Another LocalStream instance may already be running — stop it or pass " +
                     "--media-port/--audio-port to pick a free fixed port.");
                 socket.Bind(new IPEndPoint(IPAddress.Any, 0));
                 return ((IPEndPoint)socket.LocalEndPoint!).Port;

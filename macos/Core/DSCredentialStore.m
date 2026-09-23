@@ -4,11 +4,15 @@
 #import <errno.h>
 
 static NSString * const DSClientIdentifierAccount = @"client-id";
+static NSString * const DSDefaultService = @"com.localstream.client.macos";
+/// Keychain service used before the DeskStream -> LocalStream rename. Items found there are
+/// copied to the current service on first read so existing pairings survive the rename.
+static NSString * const DSLegacyService = @"com.deskstream.client.macos";
 
 @implementation DSCredentialStore
 
 - (instancetype)init {
-    return [self initWithService:@"com.deskstream.client.macos"];
+    return [self initWithService:DSDefaultService];
 }
 
 - (instancetype)initWithService:(NSString *)service {
@@ -80,7 +84,22 @@ static NSString * const DSClientIdentifierAccount = @"client-id";
 }
 
 - (NSData *)dataForAccount:(NSString *)account error:(NSError **)error {
-    NSMutableDictionary *query = [[self baseQueryForAccount:account] mutableCopy];
+    NSData *data = [self dataForAccount:account service:_service error:error];
+    if (data != nil || (error != NULL && *error != nil) ||
+        ![_service isEqualToString:DSDefaultService]) {
+        return data;
+    }
+    NSData *legacy = [self dataForAccount:account service:DSLegacyService error:NULL];
+    if (legacy != nil) [self setData:legacy account:account error:NULL];
+    return legacy;
+}
+
+- (NSData *)dataForAccount:(NSString *)account service:(NSString *)service error:(NSError **)error {
+    NSMutableDictionary *query = [@{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: service,
+        (__bridge id)kSecAttrAccount: account,
+    } mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
     query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
 

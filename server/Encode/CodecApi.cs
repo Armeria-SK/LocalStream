@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>
 /// Minimal ICodecAPI interop. Vortice.MediaFoundation does not expose ICodecAPI, so we

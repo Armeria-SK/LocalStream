@@ -41,7 +41,7 @@ static const uint16_t DSDiscoveryPort = 47800;
     NSParameterAssert(handler != nil);
     self = [super init];
     if (self) {
-        _queue = dispatch_queue_create("com.deskstream.macos.discovery", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("com.localstream.macos.discovery", DISPATCH_QUEUE_SERIAL);
         _callbackQueue = callbackQueue;
         _handler = [handler copy];
         _servers = [NSMutableDictionary dictionary];

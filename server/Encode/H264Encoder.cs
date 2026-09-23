@@ -3,7 +3,7 @@ using SharpGen.Runtime;
 using Vortice.Direct3D11;
 using Vortice.MediaFoundation;
 
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>
 /// Hardware H.264 encoder over a Media Foundation async MFT (ARCHITECTURE.md pipeline).

@@ -573,7 +573,7 @@ struct MenuItem {
 
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
-    std::cout << "[main] Initializing DeskStream Switch Homebrew client." << std::endl;
+    std::cout << "[main] Initializing LocalStream Switch Homebrew client." << std::endl;
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) < 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
@@ -588,7 +588,7 @@ int main(int argc, char* argv[]) {
         if (j) openJoysticks.push_back(j);
     }
 
-    SDL_Window* window = SDL_CreateWindow("DeskStream", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, 0);
+    SDL_Window* window = SDL_CreateWindow("LocalStream", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, 0);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!window || !renderer) {
@@ -746,7 +746,7 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
 
         // Header
-        drawText(renderer, "DeskStream", 60, 50, 4, {255, 255, 255, 255});
+        drawText(renderer, "LocalStream", 60, 50, 4, {255, 255, 255, 255});
         drawText(renderer, "Low-Latency Windows Stream Client", 60, 90, 2, {140, 150, 165, 255});
 
         // Horizontal separator line
@@ -772,7 +772,7 @@ int main(int argc, char* argv[]) {
 
         // Status message
         if (list.empty()) {
-            drawText(renderer, "Scanning LAN for DeskStream servers...", 60, startY + (int)menuItems.size() * 65 + 20, 2, {154, 164, 176, 255});
+            drawText(renderer, "Scanning LAN for LocalStream servers...", 60, startY + (int)menuItems.size() * 65 + 20, 2, {154, 164, 176, 255});
         } else {
             drawText(renderer, "Scan active. Discovered " + std::to_string(list.size()) + " server(s).", 60, startY + (int)menuItems.size() * 65 + 20, 2, {34, 197, 94, 255});
         }

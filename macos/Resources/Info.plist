@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>DeskStream</string>
+    <string>LocalStream</string>
     <key>CFBundleExecutable</key>
-    <string>DeskStream</string>
+    <string>LocalStream</string>
     <key>CFBundleIdentifier</key>
-    <string>com.deskstream.client.macos</string>
+    <string>com.localstream.client.macos</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>DeskStream</string>
+    <string>LocalStream</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -25,7 +25,7 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>DeskStream discovers and connects to your Windows streaming server on the local network.</string>
+    <string>LocalStream discovers and connects to your Windows streaming server on the local network.</string>
     <key>GCSupportsControllerUserInteraction</key>
     <true/>
 </dict>

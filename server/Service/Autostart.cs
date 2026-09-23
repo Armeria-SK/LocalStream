@@ -1,16 +1,19 @@
 using System.Diagnostics;
 
-namespace DeskStreamer.Server.Service;
+namespace LocalStream.Server.Service;
 
 /// <summary>
 /// Registers/unregisters a per-user logon autostart task via schtasks. This is deliberately a
 /// scheduled task (SC ONLOGON) and NOT a session-0 Windows service: DXGI Desktop Duplication
-/// cannot capture the interactive desktop from session 0, so DeskStream must run in the user's
+/// cannot capture the interactive desktop from session 0, so LocalStream must run in the user's
 /// own logon session.
 /// </summary>
 public static class Autostart
 {
-    private const string TaskName = "DeskStream";
+    private const string TaskName = "LocalStream";
+    /// <summary>The task name before the DeskStream -> LocalStream rename. It still points at
+    /// the old DeskStreamer.Server.exe, so it is removed whenever autostart is (re)configured.</summary>
+    private const string LegacyTaskName = "DeskStream";
 
     /// <summary>
     /// Creates the logon task. <paramref name="elevated"/> registers it to run at the highest
@@ -28,10 +31,11 @@ public static class Autostart
                           StringComparison.OrdinalIgnoreCase))
         {
             Console.Error.WriteLine(
-                "[autostart] install from the published DeskStreamer.Server.exe, not `dotnet run`.");
+                "[autostart] install from the published LocalStream.Server.exe, not `dotnet run`.");
             return 1;
         }
 
+        RemoveLegacyTask();
         string runLevel = elevated ? "HIGHEST" : "LIMITED";
         string action = $"\"{exe}\" --headless";
 
@@ -49,6 +53,7 @@ public static class Autostart
     /// <summary>Removes the logon task if present.</summary>
     public static int Uninstall()
     {
+        RemoveLegacyTask();
         int code = RunSchtasks("/Delete", "/TN", TaskName, "/F");
         if (code == 0)
             Console.WriteLine($"[autostart] removed logon task '{TaskName}'.");
@@ -57,10 +62,21 @@ public static class Autostart
         return code;
     }
 
+    /// <summary>Deletes the pre-rename logon task if it exists; absence is not an error.</summary>
+    private static void RemoveLegacyTask()
+    {
+        if (RunSchtasks(quiet: true, "/Query", "/TN", LegacyTaskName) != 0)
+            return;
+        if (RunSchtasks("/Delete", "/TN", LegacyTaskName, "/F") == 0)
+            Console.WriteLine($"[autostart] removed legacy logon task '{LegacyTaskName}'.");
+    }
+
     private static string ExecutablePath() =>
         Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
 
-    private static int RunSchtasks(params string[] args)
+    private static int RunSchtasks(params string[] args) => RunSchtasks(quiet: false, args);
+
+    private static int RunSchtasks(bool quiet, params string[] args)
     {
         var psi = new ProcessStartInfo
         {
@@ -85,9 +101,9 @@ public static class Autostart
             string stderr = proc.StandardError.ReadToEnd();
             proc.WaitForExit();
 
-            if (!string.IsNullOrWhiteSpace(stdout))
+            if (!quiet && !string.IsNullOrWhiteSpace(stdout))
                 Console.WriteLine(stdout.TrimEnd());
-            if (!string.IsNullOrWhiteSpace(stderr))
+            if (!quiet && !string.IsNullOrWhiteSpace(stderr))
                 Console.Error.WriteLine(stderr.TrimEnd());
             return proc.ExitCode;
         }

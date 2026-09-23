@@ -3,12 +3,12 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime;
 using System.Runtime.InteropServices;
-using DeskStreamer.Server.Logging;
-using DeskStreamer.Server.Net;
-using DeskStreamer.Server.Protocol;
-using DeskStreamer.Server.Service;
-using DeskStreamer.Server.Session;
-using DeskStreamer.Server.Web;
+using LocalStream.Server.Logging;
+using LocalStream.Server.Net;
+using LocalStream.Server.Protocol;
+using LocalStream.Server.Service;
+using LocalStream.Server.Session;
+using LocalStream.Server.Web;
 
 // ---- Flag parsing ------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ bool headless = HasFlag("--headless");
 bool noWeb = HasFlag("--no-web");
 bool webLan = HasFlag("--web-lan");
 
-string appLogPath = Path.Combine(AppContext.BaseDirectory, "deskstream.app.log");
+string appLogPath = Path.Combine(AppContext.BaseDirectory, "localstream.app.log");
 AsyncLogger.Initialize(appLogPath);
 
 int webPort = 47810;
@@ -84,8 +84,8 @@ if (headless)
     // AppContext.BaseDirectory is the published executable's directory and also behaves
     // correctly for `dotnet run`; Environment.ProcessPath would point at dotnet.exe there.
     string exeDir = AppContext.BaseDirectory;
-    string logPath = Path.Combine(exeDir, "deskstream.log");
-    string previousLogPath = Path.Combine(exeDir, "deskstream.previous.log");
+    string logPath = Path.Combine(exeDir, "localstream.log");
+    string previousLogPath = Path.Combine(exeDir, "localstream.previous.log");
     // Keep at most the current and immediately previous session. Headless mode can run for
     // months, and the pairing PIN is sensitive enough that an unbounded append-only history is
     // undesirable. The 1 Hz stats line is also suppressed below; the dashboard owns live stats.
@@ -103,7 +103,7 @@ if (headless)
     var logWriter = new StreamWriter(logPath, append: false) { AutoFlush = true };
     Console.SetOut(logWriter);
     Console.SetError(logWriter);
-    Console.WriteLine($"=== DeskStream headless start {DateTimeOffset.Now:O} ===");
+    Console.WriteLine($"=== LocalStream headless start {DateTimeOffset.Now:O} ===");
     AsyncLogger.Info("Running in headless mode.");
 }
 
@@ -123,11 +123,11 @@ GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 string hostname = Dns.GetHostName();
 var listenIps = LocalIPv4Addresses().ToList();
 
-Console.WriteLine("DeskStream server");
+Console.WriteLine("LocalStream server");
 Console.WriteLine("=================");
 Console.WriteLine($"Host: {hostname}");
 Console.WriteLine("Listening on:");
-AsyncLogger.Info($"DeskStream Server starting on host: {hostname}");
+AsyncLogger.Info($"LocalStream Server starting on host: {hostname}");
 foreach (var ip in listenIps)
 {
     Console.WriteLine($"  {ip}   (discovery UDP {Ports.Discovery}, control TCP {Ports.Control}, " +
@@ -313,7 +313,7 @@ try
                     $"{audioStatus} | {gamepadStatus}");
                 Console.WriteLine(diagnosticLine);
                 // GUI/non-headless runs previously wrote diagnostics only to the console, so the
-                // collected deskstream.app.log lacked the evidence needed for field debugging.
+                // collected localstream.app.log lacked the evidence needed for field debugging.
                 if (++appDiagTicks >= 10)
                 {
                     AsyncLogger.Info(diagnosticLine);

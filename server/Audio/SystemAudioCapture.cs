@@ -1,7 +1,7 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace DeskStreamer.Server.Audio;
+namespace LocalStream.Server.Audio;
 
 /// <summary>
 /// Captures the default Windows playback device through WASAPI loopback and asks the
