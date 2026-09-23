@@ -91,8 +91,19 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     /** Diagnostics: every outgoing motion packet [onOutgoingMousePacket] has been handed,
      * counted before any guard, so the CURSOR stats line can show at a glance whether
      * packets stopped (0/flat), DSMC never returned (dsmc=none), or only the fallback is
-     * drawing (fallback=shown). Reset per stream epoch in [stopReceivers]. */
+     * drawing (fallback=shown). Lifetime counter: [stopReceivers] must NOT zero it, or a
+     * read taken right after any stream (re)start would masquerade as "packets never
+     * flowed" — that ambiguity hid the real story during testing. */
     private var cursorOutPackets = 0L
+    /** How many [stopReceivers] tears this Activity has seen (every STREAM_STARTED,
+     * reconnect, stall recovery and surface loss is one). out=0 with ep>1 means the epoch
+     * restarted under the counter, not that input died. */
+    private var cursorEpoch = 0
+    /** Names the last event that took a VISIBLE cursor off screen ("none" until the first
+     * hide): "input:&lt;status&gt;" / "mouse-off" from [applyMouseControls], otherwise the
+     * [stopReceivers] reason. Answers "why is the cursor gone right now" from the stats
+     * line alone. */
+    private var lastCursorHide = "none"
     private lateinit var prefs: Prefs
     private var wifiLock: WifiManager.WifiLock? = null
     /** Preferred stream quality ("native" or "720p"), persisted via [Prefs.streamQuality] and
@@ -298,7 +309,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         streamRequested = false
         gamepadForwardingEnabled = false
         gamepadForwarder.stop()
-        stopReceivers()
+        stopReceivers("lifecycle-stop")
     }
 
     override fun onDestroy() {
@@ -315,7 +326,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         phoneServer = null
         super.onDestroy()
         gamepadForwarder.stop()
-        stopReceivers()
+        stopReceivers("destroy")
         videoDecoder?.release()
         videoDecoder = null
     }
@@ -463,7 +474,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (ControlClient.state.value == ControlClient.State.STREAMING) {
             ControlClient.stopStream()
         }
-        stopReceivers()
+        stopReceivers("surface-destroyed")
         videoDecoder?.release()
         videoDecoder = null
     }
@@ -496,13 +507,13 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             ControlClient.State.RECONNECTING -> {
                 streamStartFailed = false
                 streamRequested = false
-                stopReceivers()
+                stopReceivers("reconnecting")
                 showCenterStatus("Connection lost\nReconnecting to ${ControlClient.serverIp}…")
             }
             ControlClient.State.DISCONNECTED -> {
                 streamStartFailed = false
                 streamRequested = false
-                stopReceivers()
+                stopReceivers("disconnected")
                 showCenterStatus("Disconnected\nCheck that the PC server is still running")
             }
             ControlClient.State.PAIRING -> {
@@ -529,7 +540,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 ServerMessage.InputStarted -> onInputStarted()
                 is ServerMessage.InputUnavailable -> onInputUnavailable(msg.message)
                 ServerMessage.StreamStopped -> {
-                    stopReceivers()
+                    stopReceivers("stream-stopped")
                     if (!stallRecoveryInProgress && !streamStartFailed) {
                         showCenterStatus("Stream stopped")
                     }
@@ -545,7 +556,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         // though it crashed or disappeared.
                         streamStartFailed = true
                         streamRequested = true
-                        stopReceivers()
+                        stopReceivers("stream-error")
                     }
                     val description = describeStreamError(msg)
                     showCenterStatus(description)
@@ -559,7 +570,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             Log.e(TAG, "stream event setup failed for ${msg::class.java.simpleName}", e)
             streamStartFailed = true
             streamRequested = true
-            try { stopReceivers() } catch (_: Exception) { }
+            try { stopReceivers("setup-failed") } catch (_: Exception) { }
             val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             showCenterStatus("Client setup failed: $detail")
             showSnackbar("Client setup failed; see logcat", Snackbar.LENGTH_LONG)
@@ -609,7 +620,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
         // Always release + recreate on STREAM_STARTED: dimensions may differ, and frameId
         // numbering restarts server-side even if they don't (protocol §5).
-        stopReceivers()
+        stopReceivers("new-stream")
         frameRendered = false
 
         // Bind every callback to this exact stream epoch. A stale codec/receiver callback from
@@ -781,12 +792,20 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding.btnMouseRight.isEnabled = active
         // Do not flash an unpositioned cursor in the top-left corner. It becomes visible
         // only after feedback arrives for the first motion packet.
-        if (!active) binding.tvRemoteCursor.visibility = View.GONE
-        if (!active) hideMouseGestureHint()
         if (!active) {
+            if (binding.tvRemoteCursor.visibility == View.VISIBLE) {
+                lastCursorHide = if (mouseStatus != "live") "input:$mouseStatus" else "mouse-off"
+            }
+            binding.tvRemoteCursor.visibility = View.GONE
+            hideMouseGestureHint()
             cursorFallbackJob?.cancel()
             cursorFallbackJob = null
             cursorFallbackShown = false
+            // Un-retire the fallback together with the hide: the DSMC that retired it
+            // belonged to the live stretch that just died, and a retirement outliving it
+            // would leave the cursor permanently un-drawable if the next DSMC never
+            // arrives. The first updateRemoteCursor after input returns re-arms it.
+            cursorDsmcSeen = false
         }
         updatePointerButton(remoteMouse.currentMode())
     }
@@ -1242,7 +1261,11 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding.tvGamepadStatus.text = "Controller: $gamepadStatus"
     }
 
-    private fun stopReceivers() {
+    /** [reason] is recorded as the hide cause when the cursor is currently visible, so the
+     * CURSOR stats line can name the event that took it off screen. */
+    private fun stopReceivers(reason: String) {
+        cursorEpoch++
+        if (binding.tvRemoteCursor.visibility == View.VISIBLE) lastCursorHide = reason
         frameRendered = false
         audioNegotiationJob?.cancel()
         audioNegotiationJob = null
@@ -1261,7 +1284,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         cursorDsmcSeen = false
         virtualCursorX = 0.5f
         virtualCursorY = 0.5f
-        cursorOutPackets = 0
+        // cursorOutPackets intentionally survives: it is a lifetime counter (see field doc).
         val stoppedReceiver = mediaReceiver
         mediaReceiver = null
         stoppedReceiver?.stop()
@@ -1339,7 +1362,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 append("A-NET  waiting for audio packets…")
             }
             append("\nPAD    $gamepadDetail")
-            append("\nMOUSE  $mouseStatus · ${remoteMouse.currentMode().name.lowercase()}")
+            append("\nMOUSE  $mouseStatus · ${remoteMouse.currentMode().name.lowercase()} · ")
+            append(if (mouseEnabledByUser) "on" else "off")
             append("\nCURSOR out=$cursorOutPackets · dsmc=")
             append(if (cursorDsmcSeen) "seen" else "none")
             append(" · fallback=")
@@ -1350,6 +1374,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     else -> "idle"
                 }
             )
+            append(" · vis=")
+            append(if (binding.tvRemoteCursor.visibility == View.VISIBLE) "on" else "off")
+            append(" · hide=").append(lastCursorHide)
+            append(" · ep=").append(cursorEpoch)
             append("\nPHONE  ")
             val pad = phoneServer
             if (pad != null && pad.isRunning) {
