@@ -43,6 +43,7 @@ public sealed class NvencEncoder : IVideoEncoder
     private bool _hevc;
     private bool _temporalAq;
     private bool _intraRefresh;
+    private bool _singleSliceRefresh;
     private uint _intraRefreshFrames;
     private bool _sessionAttempted;
     private NvEncCreateBitstreamBuffer _bitstream;
@@ -152,9 +153,13 @@ public sealed class NvencEncoder : IVideoEncoder
             _presetGuid = preset;
             _temporalAq = temporalAq && IsCapSupported(NvEncCaps.SupportTemporalAq);
             _intraRefresh = intraRefresh && IsCapSupported(NvEncCaps.SupportIntraRefresh);
-            // One refresh wave sweeps the picture in ~1/6 s: short enough that a loss heals
-            // before it is noticed, long enough that no single frame becomes an IDR-sized burst.
-            _intraRefreshFrames = (uint)Math.Clamp(_fps / 6, 4, 30);
+            _singleSliceRefresh = _intraRefresh && IsCapSupported(NvEncCaps.SingleSliceIntraRefresh);
+            // One refresh wave sweeps the picture in ~1/2 s, in a single slice. Measured on
+            // this NVENC at 1080p60 HEVC 30 Mbps with the one-frame VBV: a 10-frame multi-slice
+            // wave burst to 176 KB frames (2.7x the per-frame budget) and pushed QP to 34 for
+            // ~200 ms of visible blocking; 30 single-slice frames peaked at 98 KB / QP 19 on
+            // desktop content and stayed within budget (59 KB, QP 36 vs 41) on high motion.
+            _intraRefreshFrames = (uint)Math.Clamp(_fps / 2, 8, 60);
             _config = _encoder.GetEncodePresetConfigEx(
                 _codecGuid,
                 _presetGuid,
@@ -227,6 +232,7 @@ public sealed class NvencEncoder : IVideoEncoder
             hevc.SliceMode = 0;
             hevc.SliceModeData = 0;
             hevc.EnableIntraRefresh = _intraRefresh;
+            hevc.SingleSliceIntraRefresh = _singleSliceRefresh;
             hevc.OutputRecoveryPointSEI = _intraRefresh;
             hevc.IntraRefreshPeriod = _intraRefresh ? OnDemandOnlyPeriod : 0;
             hevc.IntraRefreshCnt = _intraRefresh ? _intraRefreshFrames : 0;
@@ -244,6 +250,7 @@ public sealed class NvencEncoder : IVideoEncoder
             h264.SliceMode = 0;
             h264.SliceModeData = 0;
             h264.EnableIntraRefresh = _intraRefresh;
+            h264.SingleSliceIntraRefresh = _singleSliceRefresh;
             h264.OutputRecoveryPointSEI = _intraRefresh;
             h264.IntraRefreshPeriod = _intraRefresh ? OnDemandOnlyPeriod : 0;
             h264.IntraRefreshCnt = _intraRefresh ? _intraRefreshFrames : 0;

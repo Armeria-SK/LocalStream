@@ -80,8 +80,8 @@ internal class ConcealmentLatencyGuard(private val nowMs: () -> Long) {
         const val BASELINE_SAMPLES = 60
         const val MIN_BASELINE_SAMPLES = 10
         const val CHECK_SAMPLES = 30
-        /** Longer than one refresh wave (~1/6 s) plus decoder settling. */
-        const val SETTLE_MS = 600L
+        /** Longer than one refresh wave (~1/2 s, 30 frames at 60 fps) plus decoder settling. */
+        const val SETTLE_MS = 900L
         const val MIN_EXTRA_MS = 20
         const val SLOWDOWN_FACTOR = 2
         const val TRIGGER_COOLDOWN_MS = 10_000L

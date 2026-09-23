@@ -226,8 +226,9 @@ client should stop vibration when both values are zero.
 `STATS` is sent every 1 s during streaming. `REQUEST_IDR` is sent whenever a frame is
 dropped as unrecoverable; server rate-limits IDR generation to at most one per 300 ms.
 On a `"refresh"` stream, an assembly gap after the first delivered keyframe sends
-`REQUEST_REFRESH` instead: the server starts one on-demand intra-refresh wave (about 1/6 s
-of frames, each carrying a slice of intra blocks; no IDR-sized burst, no post-IDR blur), at
+`REQUEST_REFRESH` instead: the server starts one on-demand intra-refresh wave (about 1/2 s
+of frames, each refreshing a band of the picture within a single slice; no IDR-sized burst,
+no post-IDR blur), at
 most one per 300 ms. `REQUEST_IDR` remains the repair for startup, decoder errors, decoder
 queue overflow and codec restarts, which all need a real keyframe.
 The extended assembly, decoder, FEC, packet, and latency members are optional and additive;
