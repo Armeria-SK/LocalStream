@@ -380,6 +380,11 @@ public sealed class StreamSession : IDisposable
         _quality = ResolveRequestedQuality(msg?.Quality);
         _clientAcceptsHevc = msg?.Codecs?.Any(c => string.Equals(c, "hevc", StringComparison.OrdinalIgnoreCase)) == true;
         _clientAcceptsRefresh = msg?.Recovery?.Any(r => string.Equals(r, "refresh", StringComparison.OrdinalIgnoreCase)) == true;
+        // Tells "the TV never offered HEVC" apart from "NVENC could not start HEVC" in the log.
+        AsyncLogger.Info(
+            $"[session] Client offered codecs [{string.Join(",", msg?.Codecs ?? Array.Empty<string>())}], " +
+            $"recovery [{string.Join(",", msg?.Recovery ?? Array.Empty<string>())}]" +
+            (HevcDisabledByOperator() ? " (HEVC pinned off by DESKSTREAM_CODEC=h264)" : ""));
 
         BeginStream();
     }
@@ -410,7 +415,7 @@ public sealed class StreamSession : IDisposable
             _state = SessionState.Streaming;
             Console.WriteLine($"[session] streaming started: {_streamWidth}x{_streamHeight}@{Fps} " +
                               $"({_quality}, {_encoder.Codec}, {(_refreshRecovery ? "refresh" : "idr")} recovery), start bitrate {_currentBitrateKbps} kbps, media port {_sender.Port}.");
-            AsyncLogger.Info($"[session] Stream successfully started on media port {_sender.Port}. Encoder: {_encoder.BackendName}");
+            AsyncLogger.Info($"[session] Stream successfully started on media port {_sender.Port}. Encoder: {_encoder.BackendName}, codec: {_encoder.Codec}, recovery: {(_refreshRecovery ? "refresh" : "idr")}, {_streamWidth}x{_streamHeight}@{Fps}");
         }
         catch (EncoderUnavailableException ex)
         {

@@ -134,6 +134,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var lastStreamFps = 0
     private var lastStreamCodec = "h264"
     private var lastStreamRecovery = "idr"
+    /** Result of [requestTvGameMode] for the stats overlay. */
+    private var tvGameModeStatus = "not requested"
     /** START_STREAM codec offer (§2.3). Codec enumeration is slow-ish and fixed per device,
      * so it runs once per Activity. */
     private val offeredCodecs by lazy { VideoDecoder.supportedCodecs() }
@@ -220,6 +222,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         createWifiLock()
         applyImmersiveMode()
+        requestTvGameMode()
 
         binding.surfaceView.holder.addCallback(this)
         // A non-drawing view is left out of the window over a SurfaceView, and that region
@@ -453,6 +456,26 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         return if (gamepadForwarder.handleMotionEvent(event)) true else super.dispatchGenericMotionEvent(event)
+    }
+
+    /**
+     * Asks the display for minimal post-processing (HDMI ALLM / the TV's own "game mode").
+     * TV picture processing (motion smoothing, noise reduction, sharpening) typically adds
+     * 30-100 ms that no stream statistic can see, so this is often the largest single latency
+     * cut on a television. Android 11+ only; displays that cannot honor it ignore the hint.
+     */
+    private fun requestTvGameMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            tvGameModeStatus = "needs Android 11+"
+            return
+        }
+        window.setPreferMinimalPostProcessing(true)
+        val supported = try {
+            display?.isMinimalPostProcessingSupported == true
+        } catch (_: Exception) {
+            false
+        }
+        tvGameModeStatus = if (supported) "requested" else "not supported by this display"
     }
 
     private fun applyImmersiveMode() {
@@ -1351,6 +1374,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             append("ENC    $lastEncoderBackend")
             if (negotiatedBitrateKbps > 0) append(" · $negotiatedBitrateKbps kbps target")
             append('\n')
+            append("DEC    ${videoDecoder?.diagnostics ?: "not started"}\n")
+            append("TV     game mode $tvGameModeStatus\n")
             if (video != null) {
                 append("NET    ${video.kbps} kbps · ${"%.1f".format(video.lossPercent)}% loss\n")
                 append(

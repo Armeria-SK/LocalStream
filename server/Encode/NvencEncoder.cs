@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Lennox.NvEncSharp;
+using DeskStreamer.Server.Logging;
 using Vortice.Direct3D11;
 using static Lennox.NvEncSharp.LibNvEnc;
 
@@ -103,9 +104,12 @@ public sealed class NvencEncoder : IVideoEncoder
                 throw new EncoderUnavailableException(
                     "NVENC rejected every encoder configuration (HEVC/H.264 x P5+TemporalAQ, P5, P3).");
             }
-            Console.WriteLine(
+            string startedLine =
                 $"[encoder] NVENC {Codec} started (temporal AQ {(_temporalAq ? "on" : "off")}, " +
-                $"loss recovery {(_intraRefresh ? $"intra refresh over {_intraRefreshFrames} frames" : "IDR")}).");
+                $"loss recovery {(_intraRefresh ? $"intra refresh over {_intraRefreshFrames} frames" : "IDR")}" +
+                $"{(allowHevc && !_hevc ? "; HEVC was offered but NVENC rejected it" : "")}).";
+            Console.WriteLine(startedLine);
+            AsyncLogger.Info(startedLine);
 
             _bitstream = _encoder.CreateBitstreamBuffer();
 
