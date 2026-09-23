@@ -11,9 +11,6 @@ namespace LocalStream.Server.Service;
 public static class Autostart
 {
     private const string TaskName = "LocalStream";
-    /// <summary>The task name before the DeskStream -> LocalStream rename. It still points at
-    /// the old DeskStreamer.Server.exe, so it is removed whenever autostart is (re)configured.</summary>
-    private const string LegacyTaskName = "DeskStream";
 
     /// <summary>
     /// Creates the logon task. <paramref name="elevated"/> registers it to run at the highest
@@ -35,7 +32,6 @@ public static class Autostart
             return 1;
         }
 
-        RemoveLegacyTask();
         string runLevel = elevated ? "HIGHEST" : "LIMITED";
         string action = $"\"{exe}\" --headless";
 
@@ -53,7 +49,6 @@ public static class Autostart
     /// <summary>Removes the logon task if present.</summary>
     public static int Uninstall()
     {
-        RemoveLegacyTask();
         int code = RunSchtasks("/Delete", "/TN", TaskName, "/F");
         if (code == 0)
             Console.WriteLine($"[autostart] removed logon task '{TaskName}'.");
@@ -62,21 +57,10 @@ public static class Autostart
         return code;
     }
 
-    /// <summary>Deletes the pre-rename logon task if it exists; absence is not an error.</summary>
-    private static void RemoveLegacyTask()
-    {
-        if (RunSchtasks(quiet: true, "/Query", "/TN", LegacyTaskName) != 0)
-            return;
-        if (RunSchtasks("/Delete", "/TN", LegacyTaskName, "/F") == 0)
-            Console.WriteLine($"[autostart] removed legacy logon task '{LegacyTaskName}'.");
-    }
-
     private static string ExecutablePath() =>
         Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
 
-    private static int RunSchtasks(params string[] args) => RunSchtasks(quiet: false, args);
-
-    private static int RunSchtasks(bool quiet, params string[] args)
+    private static int RunSchtasks(params string[] args)
     {
         var psi = new ProcessStartInfo
         {
@@ -101,9 +85,9 @@ public static class Autostart
             string stderr = proc.StandardError.ReadToEnd();
             proc.WaitForExit();
 
-            if (!quiet && !string.IsNullOrWhiteSpace(stdout))
+            if (!string.IsNullOrWhiteSpace(stdout))
                 Console.WriteLine(stdout.TrimEnd());
-            if (!quiet && !string.IsNullOrWhiteSpace(stderr))
+            if (!string.IsNullOrWhiteSpace(stderr))
                 Console.Error.WriteLine(stderr.TrimEnd());
             return proc.ExitCode;
         }

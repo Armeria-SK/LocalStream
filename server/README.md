@@ -74,8 +74,6 @@ $env:LOCALSTREAM_CODEC = "h264"
 .\LocalStream.Server.exe
 ```
 
-The pre-rename `DESKSTREAM_*` names are still read as a fallback.
-
 ## Firewall
 
 Allow these on the **Private** network profile (the first run usually triggers a Windows

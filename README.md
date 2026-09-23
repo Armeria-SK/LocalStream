@@ -103,8 +103,6 @@ GitHub Actions の「Android APK」ワークフローの成果物（`localstream
 | `LOCALSTREAM_ENCODER=nvenc\|mf` | エンコーダを固定（NVENC 限定 / Media Foundation 強制） |
 | `LOCALSTREAM_CODEC=h264` | HEVC を使わず H.264 に固定 |
 
-旧名の `DESKSTREAM_*` も当面は読み込みます。
-
 ## ポート
 
 | ポート | 用途 |
@@ -125,11 +123,3 @@ GitHub Actions の「Android APK」ワークフローの成果物（`localstream
   - `offered hevc/h264` なのに `H264` の場合は、PC 側で HEVC を開始できていません（サーバーのログ `localstream.app.log` に理由が出ます）。
 - **遅延が大きい**：テレビの `TV` 行でゲームモードを確認してください。Wi-Fi の混雑が原因のときは `--max-bitrate-kbps` を下げると改善します。
 - **昇格したアプリを操作できない**：Windows の仕様上、管理者権限で動くアプリへ入力するにはサーバーも管理者権限で動かす必要があります。
-
-## DeskStream からの移行
-
-旧名称 DeskStream から LocalStream に名前を変更しました。通信の中身は互換なので、旧版と新版が混在していても接続できます。
-
-- **Android**：アプリ ID が `com.localstream.client` に変わったため、別アプリとしてインストールされます。旧アプリを削除し、PC と再度ペアリングしてください。
-- **PC**：実行ファイルが `LocalStream.Server.exe` になりました。自動起動を使っていた場合は `--install-autostart` を実行し直してください（旧タスク `DeskStream` は自動で削除されます）。ペアリング情報（`paired_clients.json`）はそのまま引き継がれます。ログファイル名は `localstream*.log` になります。
-- **macOS**：キーチェーンの保存名が変わりましたが、初回に旧名から自動で移します。

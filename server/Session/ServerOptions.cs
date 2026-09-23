@@ -12,13 +12,9 @@ public sealed class ServerOptions
     public const int MinimumBitrateKbps = 3000;
     public const int DefaultMaxBitrateKbps = 30000;
 
-    /// <summary>
-    /// Reads the operator variable <c>LOCALSTREAM_{name}</c>, falling back to the pre-rename
-    /// <c>DESKSTREAM_{name}</c> so machines that set the old variable keep working.
-    /// </summary>
+    /// <summary>Reads the operator variable <c>LOCALSTREAM_{name}</c>.</summary>
     public static string? GetEnv(string name) =>
-        Environment.GetEnvironmentVariable("LOCALSTREAM_" + name) ??
-        Environment.GetEnvironmentVariable("DESKSTREAM_" + name);
+        Environment.GetEnvironmentVariable("LOCALSTREAM_" + name);
 
     private int _mediaPort = Ports.PreferredMedia;
     private int _audioPort = Ports.PreferredAudio;
