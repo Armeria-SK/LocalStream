@@ -10,6 +10,7 @@ public static class EncoderFactory
         int height,
         int fps,
         int initialBitrateKbps,
+        bool allowHevc,
         ID3D11Texture2D? registrationProbe = null)
     {
         string requested = Environment.GetEnvironmentVariable("DESKSTREAM_ENCODER")?
@@ -31,8 +32,8 @@ public static class EncoderFactory
         try
         {
             Console.WriteLine("[encoder] attempting native NVIDIA NVENC backend.");
-            return new NvencH264Encoder(
-                device, width, height, fps, initialBitrateKbps, registrationProbe);
+            return new NvencEncoder(
+                device, width, height, fps, initialBitrateKbps, allowHevc, registrationProbe);
         }
         catch (Exception ex)
         {

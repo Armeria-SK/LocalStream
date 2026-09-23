@@ -185,8 +185,8 @@ class PhoneControllerServer(private val mouse: RemoteMouseController) {
             if (b < 0) return null
             buf[len++] = b.toByte()
             if (len >= 4 &&
-                buf[len - 1] == 13.toByte() && buf[len - 2] == 10.toByte() &&
-                buf[len - 3] == 13.toByte() && buf[len - 4] == 10.toByte()
+                buf[len - 4] == 13.toByte() && buf[len - 3] == 10.toByte() &&
+                buf[len - 2] == 13.toByte() && buf[len - 1] == 10.toByte()
             ) break
         }
         if (len >= buf.size) return null

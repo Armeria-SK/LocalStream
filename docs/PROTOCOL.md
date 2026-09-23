@@ -117,7 +117,7 @@ with the token and proceeds. `PAIR_FAIL` with `attemptsLeft` on wrong PIN.
 Client → server:
 
 ```json
-{"type":"START_STREAM","maxBitrateKbps":10000,"fps":60,"quality":"720p"}
+{"type":"START_STREAM","maxBitrateKbps":10000,"fps":60,"quality":"720p","codecs":["hevc","h264"],"recovery":["refresh"]}
 {"type":"MEDIA_READY","port":53124}
 {"type":"AUDIO_START"}
 {"type":"AUDIO_READY","port":53125}
@@ -133,13 +133,14 @@ Client → server:
 {"type":"INPUT_STOP"}
 {"type":"STOP_STREAM"}
 {"type":"REQUEST_IDR"}
+{"type":"REQUEST_REFRESH"}
 {"type":"STATS","framesOk":58,"framesAssembled":59,"framesDropped":2,"assemblyFramesDropped":1,"decoderFramesDropped":1,"fecPacketsRecovered":3,"videoPacketsReceived":1340,"fecPacketsReceived":240,"bytes":2411000,"intervalMs":1000,"serverPipelineP95Ms":7,"captureToReceiveP95Ms":12,"decodeToSurfaceP95Ms":8}
 ```
 
 Server → client:
 
 ```json
-{"type":"STREAM_STARTED","mediaPort":47802,"width":1920,"height":1080,"fps":60,"codec":"h264","encoderBackend":"media-foundation","clockBaseUs":2234500000}
+{"type":"STREAM_STARTED","mediaPort":47802,"width":1920,"height":1080,"fps":60,"codec":"hevc","recovery":"refresh","encoderBackend":"nvenc-ultra-low-latency","clockBaseUs":2234500000}
 {"type":"AUDIO_STARTED","audioPort":47803,"sampleRate":48000,"channels":2,"format":"pcm_s16le","packetSamples":240}
 {"type":"AUDIO_UNAVAILABLE","message":"No active Windows playback device"}
 {"type":"GAMEPAD_STARTED","controllers":1,"controllerType":"xbox360"}
@@ -167,6 +168,22 @@ field remains fully compatible. Quality is fixed for the lifetime of a stream; t
 client stops and restarts the stream (`STOP_STREAM` then `START_STREAM`). The authoritative
 streamed dimensions are always those reported in `STREAM_STARTED.width`/`height`, regardless of
 the `HELLO_OK` primary-display size.
+
+`START_STREAM.codecs` is an OPTIONAL array of the codecs the client decodes in hardware, in
+preference order: `"hevc"` (H.265 Main) and/or `"h264"`. Absent means `["h264"]`. The server
+answers with the codec it actually encodes in `STREAM_STARTED.codec` — `"hevc"` only when the
+client offered it and the encoder supports it (NVENC; the Media Foundation fallback is H.264
+only), otherwise `"h264"`. Both are Annex-B with in-band parameter sets (VPS/SPS/PPS for HEVC)
+on every IDR, carried unchanged by §3. An operator can pin H.264 with `DESKSTREAM_CODEC=h264`.
+An Android client offers HEVC only when a hardware HEVC decoder covers at least 1080p60 and
+every size its best hardware H.264 decoder covers.
+
+`START_STREAM.recovery` is an OPTIONAL array of loss-recovery modes the client implements.
+`"refresh"` means the client keeps decoding across a lost frame (§3.1) and repairs it with
+`REQUEST_REFRESH`. `STREAM_STARTED.recovery` is `"refresh"` only when both sides support it
+(NVENC with intra refresh), otherwise `"idr"` (absent = `"idr"`). A client MUST NOT send
+`REQUEST_REFRESH` on an `"idr"` stream; a server that receives one there treats it as
+`REQUEST_IDR`.
 
 After binding its media socket, the client sends `MEDIA_READY` over the authenticated TCP
 connection with that socket's local UDP port. The server combines this port with the TCP peer
@@ -207,6 +224,11 @@ client should stop vibration when both values are zero.
 
 `STATS` is sent every 1 s during streaming. `REQUEST_IDR` is sent whenever a frame is
 dropped as unrecoverable; server rate-limits IDR generation to at most one per 300 ms.
+On a `"refresh"` stream, an assembly gap after the first delivered keyframe sends
+`REQUEST_REFRESH` instead: the server starts one on-demand intra-refresh wave (about 1/6 s
+of frames, each carrying a slice of intra blocks; no IDR-sized burst, no post-IDR blur), at
+most one per 300 ms. `REQUEST_IDR` remains the repair for startup, decoder errors, decoder
+queue overflow and codec restarts, which all need a real keyframe.
 The extended assembly, decoder, FEC, packet, and latency members are optional and additive;
 servers treat a missing member as unavailable so older clients remain compatible.
 
@@ -292,6 +314,12 @@ chunks; chunk `i` goes in the packet with `packetIndex = i`.
   be referenced (i.e. any drop), send `REQUEST_IDR` and **discard everything** until the
   next `KEYFRAME` frame arrives (decoding a stream with a missing reference produces
   corruption — never feed across a gap in `frameId` except at a keyframe).
+- Exception, `STREAM_STARTED.recovery == "refresh"` only: once a keyframe has been fed, an
+  assembly gap is skipped instead — resume at the oldest complete frame (or, with the
+  window full and nothing complete, drop only the oldest incomplete frame), count the skipped
+  frames as dropped in `STATS`, and send `REQUEST_REFRESH`. The decoder conceals the missing
+  reference until the intra-refresh wave has swept the picture. Before the first keyframe and
+  for decoder-side drops the keyframe rule above still applies.
 - Never delay rendering by PTS. Release decoder output to the surface as soon as it is
   produced.
 
@@ -432,9 +460,13 @@ motion as the control-channel `MOUSE_MOTION` message (§2.3) instead of this dat
 sequence space, one server-side monotonicity check — only the framing differs.
 
 After applying a motion packet the server may return a 16-byte authoritative cursor packet
-on the media channel: ASCII `DSMC`, version byte `1`, three reserved zero bytes, the echoed
-uint32 motion sequence, then uint16 normalized primary-display X and Y. The client uses this
-for its cursor overlay; clients that do not recognize it ignore it.
+on the media channel: ASCII `DSMC`, version byte `1`, three reserved zero bytes, a uint32
+sequence, then uint16 normalized primary-display X and Y. While streaming, the server also
+polls the host pointer (~60 Hz) and sends DSMC whenever it moves — whatever moved it: a
+controller-role session, the PC's own mouse — plus a resend every 500 ms. The sequence is
+therefore the echoed motion sequence or an independent counter and carries no ordering
+meaning; clients MUST NOT use it to discard packets. The client uses this for its cursor
+overlay; clients that do not recognize it ignore it.
 
 ## 4. Adaptation (server-side controller)
 
@@ -453,9 +485,12 @@ Inputs: `STATS` messages and IDR request rate.
 - **Up:** require 10 consecutive clean intervals, capture-to-receive p95 ≤80 ms,
   decode-to-surface p95 ≤max(200 ms, stream-epoch healthy decode floor + 40 ms), at least
   15 s since the previous bitrate change, and at least
-  30 s since congestion. Probe by +1000 kbps. A congestion cut pins the remembered ceiling;
-  only a full 60 s without congestion permits the ceiling to rise by 1000 kbps, at most once
-  every 30 s. If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
+  30 s since congestion. Each probe closes half the gap to the ceiling (rounded down to
+  500 kbps, at least +1000 kbps), so a far-off ceiling is reached in a few probes and the
+  last steps near it stay small. A congestion cut pins the remembered ceiling at the cut rate
+  and remembers the rate that congested; only a full 60 s without congestion permits the
+  ceiling to rise, at most once every 30 s — by half the gap to that congested rate while
+  below it, by 1000 kbps at or above it. If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
   disable further upward probes for that stream; emergency downward changes remain available.
 - Start at min(16000, maxBitrateKbps) — high enough that games/movies look right in the
   first frame instead of needing two or three probe rounds.

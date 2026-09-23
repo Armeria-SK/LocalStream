@@ -68,7 +68,11 @@ class MediaReceiver(
     private val onStats: (StreamStats) -> Unit = {},
     private val onStalled: () -> Unit = {},
     private val onCursorPosition: (CursorPosition) -> Unit = {},
-    private val onStartupError: (String) -> Unit = {}
+    private val onStartupError: (String) -> Unit = {},
+    /** STREAM_STARTED said `"recovery":"refresh"` (§2.3): a lost frame is skipped and
+     * decoding continues while one intra-refresh wave heals the picture, instead of
+     * freezing until a replacement IDR arrives. */
+    refreshRecovery: Boolean = false
 ) {
     private enum class InputPacketKind { GAMEPAD, MOUSE }
 
@@ -105,6 +109,12 @@ class MediaReceiver(
             // the replacement IDR immediately; ControlClient coalesces duplicate requests, while
             // waiting for a second drop can deadlock because the assembler now discards P-frames.
             if (requestIdr) ControlClient.requestIdr()
+        },
+        refreshRecovery = refreshRecovery,
+        onGapSkipped = { skippedFrames ->
+            framesDropped.addAndGet(skippedFrames)
+            assemblyFramesDropped.addAndGet(skippedFrames)
+            ControlClient.requestRefresh()
         }
     )
 
@@ -506,6 +516,11 @@ private const val FEC_INTERLEAVE = 4
  * frame completing while an older one is still incomplete, or an external drop from the
  * decoder) puts the assembler into discard-until-keyframe mode.
  *
+ * Exception — [refreshRecovery] streams (§2.3): once a keyframe has been delivered, an
+ * assembly gap is skipped instead ([onGapSkipped] asks for an intra-refresh wave) and later
+ * frames keep flowing, so a lost packet costs a brief local smear rather than a freeze plus
+ * an IDR burst. Decoder-side drops and startup still use discard-until-keyframe.
+ *
  * Not thread-safe by itself -- [onPacket] must only be called from a single thread (the
  * MediaReceiver's dedicated receive thread). [requestDiscardUntilKeyframe] may be called from
  * any thread (it just sets a volatile flag).
@@ -520,7 +535,9 @@ internal class FrameAssembler(
         ptsMs: Long,
         pipelineDelayMs: Int
     ) -> Unit,
-    private val onFrameDropped: (requestIdr: Boolean, droppedFrames: Int) -> Unit
+    private val onFrameDropped: (requestIdr: Boolean, droppedFrames: Int) -> Unit,
+    private val refreshRecovery: Boolean = false,
+    private val onGapSkipped: (skippedFrames: Int) -> Unit = {}
 ) {
     private val fecRecoveredPackets = AtomicInteger(0)
     private val inFlight = LinkedHashMap<Long, InFlightFrame>()
@@ -615,6 +632,7 @@ internal class FrameAssembler(
             if (discardingUntilKeyframe && !header.keyframe &&
                 inFlight.values.none { it.keyframe }
             ) return
+            if (bufferedFrameCount() >= MAX_INFLIGHT_FRAMES && skipGap()) drainReady(nowMs)
             if (bufferedFrameCount() >= MAX_INFLIGHT_FRAMES) {
                 triggerDrop()
                 if (!header.keyframe) return
@@ -710,7 +728,42 @@ internal class FrameAssembler(
             drainReady(ready[readyKeyframeId]?.completedAtMs ?: 0L)
             return
         }
+        if (skipGap()) {
+            drainReady(ready.firstEntry()?.value?.completedAtMs ?: 0L)
+            return
+        }
         triggerDrop()
+    }
+
+    /**
+     * Refresh-recovery gap handling: resume at the oldest complete frame (or, when nothing
+     * has completed and the reorder window is full, just past the oldest incomplete one),
+     * releasing everything older. The decoder keeps its references, so no keyframe wait.
+     * Returns false when this stream must use the IDR path instead: refresh was not
+     * negotiated, or no keyframe has been delivered yet (nothing to conceal from).
+     */
+    private fun skipGap(): Boolean {
+        if (!refreshRecovery || discardingUntilKeyframe || nextFrameId < 0L) return false
+        var resumeAt = ready.firstEntry()?.key
+        if (resumeAt == null) {
+            val oldest = inFlight.keys.minOrNull() ?: return false
+            inFlight.remove(oldest)?.let { releaseFrame(it) }
+            resumeAt = inFlight.keys.minOrNull() ?: nextFrameId(oldest)
+        }
+        if (resumeAt <= nextFrameId) return false
+        val iterator = inFlight.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key < resumeAt) {
+                releaseFrame(entry.value)
+                iterator.remove()
+            }
+        }
+        val skippedFrames = (resumeAt - nextFrameId).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+        dropWatermark = maxOf(dropWatermark, resumeAt - 1L)
+        nextFrameId = resumeAt
+        onGapSkipped(skippedFrames)
+        return true
     }
 
     private fun triggerDrop() {

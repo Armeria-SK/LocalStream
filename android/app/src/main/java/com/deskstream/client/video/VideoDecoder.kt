@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Bounded asynchronous H.264 decoder that renders directly to a [Surface].
+ * Bounded asynchronous H.264/HEVC decoder that renders directly to a [Surface].
  *
  * The UDP thread only takes a tiny queue lock and transfers buffer ownership. MediaCodec
  * enumeration/configuration, complete-AU copies, queueing, output, and teardown are serialized on
@@ -47,7 +47,9 @@ class VideoDecoder(
         val surface: Surface,
         val width: Int,
         val height: Int,
-        val fps: Int
+        val fps: Int,
+        /** MediaCodec MIME for the negotiated STREAM_STARTED codec. */
+        val mime: String
     )
 
     // Producer queue: the UDP thread never acquires any codec-state lock.
@@ -174,7 +176,7 @@ class VideoDecoder(
      * Begins a new stream epoch. Reset is posted before MediaReceiver starts, so any later drain
      * message is ordered after old-codec teardown and new surface/dimension setup.
      */
-    fun resetForNewStream(surface: Surface, width: Int, height: Int, fps: Int) {
+    fun resetForNewStream(surface: Surface, width: Int, height: Int, fps: Int, codec: String = "h264") {
         if (released.get()) return
         val generation = synchronized(queueLock) {
             streamGeneration += 1L
@@ -190,7 +192,8 @@ class VideoDecoder(
             surface,
             width,
             height,
-            fps.coerceIn(MIN_FPS, MAX_FPS)
+            fps.coerceIn(MIN_FPS, MAX_FPS),
+            mimeFor(codec)
         )
         if (!handler.post { resetOnWorker(config) }) {
             synchronized(queueLock) {
@@ -353,7 +356,7 @@ class VideoDecoder(
                     "AU exceeds codec input capacity: frame=${frame.frameId} " +
                         "length=${frame.length} capacity=${input.capacity()} codec=${activeCodec.name}"
                 )
-                throw IllegalArgumentException("H.264 access unit exceeds codec input capacity")
+                throw IllegalArgumentException("access unit exceeds codec input capacity")
             }
             input.put(frame.data, 0, frame.length)
             var ptsUs = nowUs()
@@ -380,31 +383,41 @@ class VideoDecoder(
     private fun configureCodecOnWorker(config: StreamConfig): Boolean {
         var candidate: MediaCodec? = null
         return try {
-            val format = MediaFormat.createVideoFormat(MIME_TYPE, config.width, config.height).apply {
-                setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
-                // Game/movie streams: allow the codec to spin up to 2x real time and run at
-                // real-time scheduling priority so decode keeps up with bursty IDR frames
-                // instead of the codec trading throughput for power.
-                setInteger(MediaFormat.KEY_OPERATING_RATE, config.fps * 2)
-                setInteger(MediaFormat.KEY_PRIORITY, 1)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_ACCESS_UNIT_BYTES)
-            }
-            val decoderName = chooseDecoderName(format, config)
+            val baseFormat = buildFormat(config, tuned = false, lowLatency = false, vendorKeys = emptyMap())
+            val decoderName = chooseDecoderName(baseFormat, config)
             candidate = if (decoderName != null) {
                 MediaCodec.createByCodecName(decoderName)
             } else {
-                MediaCodec.createDecoderByType(MIME_TYPE)
+                MediaCodec.createDecoderByType(config.mime)
             }
 
-            val capabilities = candidate.codecInfo.getCapabilitiesForType(MIME_TYPE)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            val capabilities = candidate.codecInfo.getCapabilitiesForType(config.mime)
+            val lowLatency = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                 capabilities.isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)
-            ) {
-                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-            }
+            val vendorKeys = vendorLowLatencyKeys(candidate.name)
 
             candidate.setCallback(callback, handler)
-            candidate.configure(format, config.surface, null, 0)
+            try {
+                candidate.configure(
+                    buildFormat(config, tuned = true, lowLatency = lowLatency, vendorKeys = vendorKeys),
+                    config.surface,
+                    null,
+                    0
+                )
+            } catch (tunedError: Exception) {
+                // Realtime priority and vendor keys are hints, but a strict OEM codec may refuse
+                // a configuration it cannot guarantee. Fall back to the plain, previously
+                // shipped configuration rather than leaving the stream black.
+                Log.w(TAG, "decoder rejected low-latency tuning; retrying plain config", tunedError)
+                candidate.reset()
+                candidate.setCallback(callback, handler)
+                candidate.configure(
+                    buildFormat(config, tuned = false, lowLatency = lowLatency, vendorKeys = emptyMap()),
+                    config.surface,
+                    null,
+                    0
+                )
+            }
             candidate.start()
             if (released.get() || config.generation != streamGeneration) {
                 destroyCodecOnWorker(candidate)
@@ -425,6 +438,28 @@ class VideoDecoder(
             destroyCodecOnWorker(candidate)
             false
         }
+    }
+
+    /**
+     * [tuned] = realtime codec priority plus [vendorKeys]. KEY_PRIORITY 0 is realtime and 1 is
+     * best-effort (the value this used to send, which let TV decoders trade throughput for
+     * power and drop frames around bursty keyframes).
+     */
+    private fun buildFormat(
+        config: StreamConfig,
+        tuned: Boolean,
+        lowLatency: Boolean,
+        vendorKeys: Map<String, Int>
+    ): MediaFormat = MediaFormat.createVideoFormat(config.mime, config.width, config.height).apply {
+        setInteger(MediaFormat.KEY_FRAME_RATE, config.fps)
+        // Allow the codec to spin up to 2x real time so decode keeps up with bursty frames.
+        setInteger(MediaFormat.KEY_OPERATING_RATE, config.fps * 2)
+        setInteger(MediaFormat.KEY_PRIORITY, if (tuned) 0 else 1)
+        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, MAX_ACCESS_UNIT_BYTES)
+        if (lowLatency && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+        }
+        for ((key, value) in vendorKeys) setInteger(key, value)
     }
 
     private fun scheduleCodecRecoveryOnWorker(reason: String, notify: Boolean) {
@@ -536,9 +571,9 @@ class VideoDecoder(
         if (info.isEncoder || info.isAlias || !info.isHardwareAccelerated || info.isSoftwareOnly) {
             return false
         }
-        if (info.supportedTypes.none { it.equals(MIME_TYPE, ignoreCase = true) }) return false
+        if (info.supportedTypes.none { it.equals(config.mime, ignoreCase = true) }) return false
         return try {
-            val capabilities = info.getCapabilitiesForType(MIME_TYPE)
+            val capabilities = info.getCapabilitiesForType(config.mime)
             capabilities.isFormatSupported(format) &&
                 capabilities.videoCapabilities.areSizeAndRateSupported(
                     config.width,
@@ -582,7 +617,7 @@ class VideoDecoder(
             selected.name
         }
         return "decoder ready: name=${selected.name} canonical=$canonical hardware=$hardware " +
-            "${config.width}x${config.height}@${config.fps} performance=$performance " +
+            "${config.mime} ${config.width}x${config.height}@${config.fps} performance=$performance " +
             "maxAu=$MAX_ACCESS_UNIT_BYTES"
     }
 
@@ -590,7 +625,84 @@ class VideoDecoder(
 
     companion object {
         private const val TAG = "VideoDecoder"
-        private const val MIME_TYPE = "video/avc"
+        private const val MIME_AVC = "video/avc"
+        private const val MIME_HEVC = "video/hevc"
+
+        private fun mimeFor(codec: String): String =
+            if (codec.equals("hevc", ignoreCase = true)) MIME_HEVC else MIME_AVC
+
+        /**
+         * Codecs to offer in START_STREAM (§2.3), in preference order. HEVC is offered only
+         * when a hardware HEVC decoder handles at least 1080p60 and every size the best
+         * hardware H.264 decoder does — the server picks the resolution, so HEVC must never
+         * be the reason a stream cannot decode.
+         */
+        fun supportedCodecs(): List<String> {
+            return try {
+                val infos = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                val hevc = bestHardwareSize(infos, MIME_HEVC) ?: return listOf("h264")
+                val avc = bestHardwareSize(infos, MIME_AVC)
+                val hevcFits = hevc.first >= 1920 && hevc.second >= 1080 &&
+                    (avc == null || (hevc.first >= avc.first && hevc.second >= avc.second))
+                if (hevcFits) listOf("hevc", "h264") else listOf("h264")
+            } catch (error: Exception) {
+                Log.w(TAG, "codec enumeration failed; offering H.264 only", error)
+                listOf("h264")
+            }
+        }
+
+        /** Largest width/height any hardware decoder for [mime] supports at 60 fps. */
+        private fun bestHardwareSize(infos: Array<MediaCodecInfo>, mime: String): Pair<Int, Int>? {
+            var best: Pair<Int, Int>? = null
+            for (info in infos) {
+                if (info.isEncoder || info.supportedTypes.none { it.equals(mime, ignoreCase = true) }) continue
+                val hardware = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    info.isHardwareAccelerated && !info.isSoftwareOnly
+                } else {
+                    !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
+                }
+                if (!hardware) continue
+                val video = try {
+                    info.getCapabilitiesForType(mime).videoCapabilities
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                val width = video.supportedWidths.upper
+                val height = video.supportedHeights.upper
+                if (!video.areSizeAndRateSupported(minOf(width, 1920), minOf(height, 1080), 60.0)) continue
+                if (best == null || width.toLong() * height > best.first.toLong() * best.second) {
+                    best = width to height
+                }
+            }
+            return best
+        }
+
+        /**
+         * SoC-specific low-latency switches (the same keys Moonlight uses). Many Android TV
+         * decoders ignore the standard KEY_LOW_LATENCY and otherwise hold several decoded
+         * frames before output. Unknown vendor keys are ignored by other codecs, and a codec
+         * that rejects them falls back to the plain configuration.
+         */
+        private fun vendorLowLatencyKeys(codecName: String): Map<String, Int> {
+            val name = codecName.lowercase()
+            return when {
+                name.startsWith("omx.qcom") || name.startsWith("c2.qti") -> mapOf(
+                    "vendor.qti-ext-dec-picture-order.enable" to 1,
+                    "vendor.qti-ext-dec-low-latency.enable" to 1
+                )
+                name.startsWith("omx.hisi") || name.startsWith("c2.hisi") -> mapOf(
+                    "vendor.hisi-ext-low-latency-video-dec.video-scene-for-low-latency-req" to 1,
+                    "vendor.hisi-ext-low-latency-video-dec.video-scene-for-low-latency-rdy" to -1
+                )
+                name.startsWith("omx.exynos") || name.startsWith("c2.exynos") -> mapOf(
+                    "vendor.rtc-ext-dec-low-latency.enable" to 1
+                )
+                name.startsWith("omx.amlogic") || name.startsWith("c2.amlogic") -> mapOf(
+                    "vendor.low-latency.enable" to 1
+                )
+                else -> emptyMap()
+            }
+        }
         private const val MIN_FPS = 24
         private const val MAX_FPS = 240
         // This is only a producer-to-codec handoff bound, not a render queue. A 120 ms ceiling

@@ -55,6 +55,8 @@ public sealed class H264Encoder : IVideoEncoder
     /// <summary>Called on the encoder event thread with a reused buffer. Consume synchronously.</summary>
     public Action<byte[], int, bool, uint>? OnEncodedFrame { get; set; }
     public string BackendName => "media-foundation";
+    public string Codec => "h264";
+    public bool SupportsRefreshRecovery => false;
 
     public H264Encoder(ID3D11Device device, int width, int height, int fps, int initialBitrateKbps)
     {
@@ -244,6 +246,9 @@ public sealed class H264Encoder : IVideoEncoder
 
     /// <summary>Forces the next encoded frame to be an IDR. Caller rate-limits per PROTOCOL.md.</summary>
     public void RequestIdr() => TrySetCodecU32(MfGuids.CODECAPI_AVEncVideoForceKeyFrame, 1);
+
+    /// <summary>Media Foundation exposes no intra-refresh control; an IDR is the only repair.</summary>
+    public void RequestRefresh() => RequestIdr();
 
     /// <summary>Adjusts the CBR target mid-stream (adaptation controller, PROTOCOL.md §4).</summary>
     public bool SetBitrate(int kbps)

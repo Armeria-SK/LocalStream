@@ -281,6 +281,81 @@ class FrameAssemblerTest {
         )
     }
 
+    @Test
+    fun refreshRecovery_skipsExpiredGap_andKeepsDecodingWithoutIdr() {
+        val completed = mutableListOf<Long>()
+        val idrRequests = mutableListOf<Boolean>()
+        val skipped = mutableListOf<Int>()
+        val assembler = refreshAssembler(completed, idrRequests, skipped)
+
+        assembler.accept(
+            packet(frameId = 19, packetIndex = 0, packetCount = 1, keyframe = true),
+            nowMs = 0
+        )
+        assembler.accept(packet(frameId = 20, packetIndex = 0, packetCount = 2), nowMs = 1)
+        assembler.accept(packet(frameId = 21, packetIndex = 0, packetCount = 1), nowMs = 2)
+        assembler.onTick(23)
+        assembler.accept(packet(frameId = 22, packetIndex = 0, packetCount = 1), nowMs = 24)
+
+        assertEquals(listOf(19L, 21L, 22L), completed)
+        assertEquals(listOf(1), skipped)
+        assertTrue(idrRequests.isEmpty())
+    }
+
+    @Test
+    fun refreshRecovery_fullWindowWithoutCompleteFrame_dropsOldestOnly() {
+        val completed = mutableListOf<Long>()
+        val idrRequests = mutableListOf<Boolean>()
+        val skipped = mutableListOf<Int>()
+        val assembler = refreshAssembler(completed, idrRequests, skipped)
+
+        assembler.accept(
+            packet(frameId = 60, packetIndex = 0, packetCount = 1, keyframe = true),
+            nowMs = 0
+        )
+        for (id in 61L..64L) {
+            assembler.accept(packet(frameId = id, packetIndex = 0, packetCount = 2), nowMs = id - 60)
+        }
+        assembler.accept(packet(frameId = 65, packetIndex = 0, packetCount = 2), nowMs = 5)
+        assembler.accept(packet(frameId = 62, packetIndex = 1, packetCount = 2), nowMs = 6)
+
+        assertEquals(listOf(60L, 62L), completed)
+        assertEquals(listOf(1), skipped)
+        assertTrue(idrRequests.isEmpty())
+    }
+
+    @Test
+    fun refreshRecovery_beforeFirstKeyframe_stillRequestsIdr() {
+        val completed = mutableListOf<Long>()
+        val idrRequests = mutableListOf<Boolean>()
+        val skipped = mutableListOf<Int>()
+        val assembler = refreshAssembler(completed, idrRequests, skipped)
+
+        assembler.accept(
+            packet(frameId = 80, packetIndex = 0, packetCount = 2, keyframe = true),
+            nowMs = 0
+        )
+        assembler.accept(packet(frameId = 81, packetIndex = 0, packetCount = 1), nowMs = 1)
+        assembler.accept(packet(frameId = 82, packetIndex = 0, packetCount = 1), nowMs = 2)
+        assembler.accept(packet(frameId = 83, packetIndex = 0, packetCount = 1), nowMs = 3)
+
+        assertTrue(completed.isEmpty())
+        assertTrue(skipped.isEmpty())
+        assertEquals(listOf(true), idrRequests)
+    }
+
+    private fun refreshAssembler(
+        completed: MutableList<Long>,
+        idrRequests: MutableList<Boolean>,
+        skipped: MutableList<Int>
+    ): FrameAssembler = FrameAssembler(
+        bufferPool = BufferPool(),
+        onFrameComplete = { _, _, _, frameId, _, _ -> completed += frameId },
+        onFrameDropped = { requestIdr, _ -> if (requestIdr) idrRequests += true },
+        refreshRecovery = true,
+        onGapSkipped = { skipped += it }
+    )
+
     private fun assembler(
         completed: MutableList<Long>,
         onDrop: () -> Unit

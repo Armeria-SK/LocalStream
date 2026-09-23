@@ -6,11 +6,11 @@ using static Lennox.NvEncSharp.LibNvEnc;
 namespace DeskStreamer.Server.Encode;
 
 /// <summary>
-/// Native NVIDIA NVENC H.264 backend. Encoding is synchronous and has exactly one output
-/// buffer, which deliberately prevents the application from building a hidden frame queue.
-/// Raw NV12 textures stay on the shared D3D11 device for the entire path.
+/// Native NVIDIA NVENC backend (HEVC or H.264). Encoding is synchronous and has exactly one
+/// output buffer, which deliberately prevents the application from building a hidden frame
+/// queue. Raw NV12 textures stay on the shared D3D11 device for the entire path.
 /// </summary>
-public sealed class NvencH264Encoder : IVideoEncoder
+public sealed class NvencEncoder : IVideoEncoder
 {
     private sealed class RegisteredTexture : IDisposable
     {
@@ -38,24 +38,34 @@ public sealed class NvencH264Encoder : IVideoEncoder
     private NvEncoder _encoder;
     private NvEncConfig _config;
     private Guid _presetGuid = NvEncPresetGuids.P5;
+    private Guid _codecGuid = NvEncCodecGuids.H264;
+    private bool _hevc;
     private bool _temporalAq;
+    private bool _intraRefresh;
+    private uint _intraRefreshFrames;
     private bool _sessionAttempted;
     private NvEncCreateBitstreamBuffer _bitstream;
     private byte[] _output = new byte[1 << 20];
     private uint _frameIndex;
     private bool _forceIdr = true;
+    private bool _forceRefresh;
     private bool _initialized;
     private bool _disposed;
 
     public Action<byte[], int, bool, uint>? OnEncodedFrame { get; set; }
     public string BackendName => "nvenc-ultra-low-latency";
+    public string Codec => _hevc ? "hevc" : "h264";
+    public bool SupportsRefreshRecovery => _intraRefresh;
 
-    public NvencH264Encoder(
+    /// <param name="allowHevc">Try HEVC Main first; H.264 High remains the fallback so a GPU
+    /// without HEVC NVENC (or a driver that rejects it) still streams.</param>
+    public NvencEncoder(
         ID3D11Device device,
         int width,
         int height,
         int fps,
         int initialBitrateKbps,
+        bool allowHevc,
         ID3D11Texture2D? registrationProbe = null)
     {
         _width = width;
@@ -72,16 +82,30 @@ public sealed class NvencH264Encoder : IVideoEncoder
             _device = device.NativePointer;
             _encoder = OpenEncoderForDirectX(device.NativePointer);
 
-            // Quality ladder: P5 + Temporal AQ first (better detail at the same bitrate),
-            // then drop features step by step so an older GPU/driver still starts. The
-            // final rung is exactly the previous P3 configuration (known working).
-            if (!TryStartEncoder(NvEncPresetGuids.P5, temporalAq: true, initialBitrateKbps) &&
-                !TryStartEncoder(NvEncPresetGuids.P5, temporalAq: false, initialBitrateKbps) &&
-                !TryStartEncoder(NvEncPresetGuids.P3, temporalAq: false, initialBitrateKbps))
+            // Quality ladder: HEVC before H.264 (~30-40% less bitrate for the same detail),
+            // P5 + Temporal AQ first (better detail at the same bitrate), intra-refresh loss
+            // recovery before plain IDR recovery, then drop features step by step so an older
+            // GPU/driver still starts. The final rung is exactly the previous H.264 P3
+            // configuration (known working).
+            bool started = false;
+            foreach (bool hevc in allowHevc ? new[] { true, false } : new[] { false })
+            {
+                started =
+                    TryStartEncoder(hevc, NvEncPresetGuids.P5, temporalAq: true, intraRefresh: true, initialBitrateKbps) ||
+                    TryStartEncoder(hevc, NvEncPresetGuids.P5, temporalAq: false, intraRefresh: true, initialBitrateKbps) ||
+                    TryStartEncoder(hevc, NvEncPresetGuids.P5, temporalAq: false, intraRefresh: false, initialBitrateKbps) ||
+                    TryStartEncoder(hevc, NvEncPresetGuids.P3, temporalAq: false, intraRefresh: false, initialBitrateKbps);
+                if (started)
+                    break;
+            }
+            if (!started)
             {
                 throw new EncoderUnavailableException(
-                    "NVENC rejected every encoder configuration (P5+TemporalAQ, P5, P3).");
+                    "NVENC rejected every encoder configuration (HEVC/H.264 x P5+TemporalAQ, P5, P3).");
             }
+            Console.WriteLine(
+                $"[encoder] NVENC {Codec} started (temporal AQ {(_temporalAq ? "on" : "off")}, " +
+                $"loss recovery {(_intraRefresh ? $"intra refresh over {_intraRefreshFrames} frames" : "IDR")}).");
 
             _bitstream = _encoder.CreateBitstreamBuffer();
 
@@ -107,7 +131,7 @@ public sealed class NvencH264Encoder : IVideoEncoder
     /// a clean NVENC session. Any NVENC error (unsupported preset GUID, Temporal AQ
     /// rejected by the driver, initialize failure) reports false so the next rung runs.
     /// </summary>
-    private bool TryStartEncoder(Guid preset, bool temporalAq, int bitrateKbps)
+    private bool TryStartEncoder(bool hevc, Guid preset, bool temporalAq, bool intraRefresh, int bitrateKbps)
     {
         try
         {
@@ -119,10 +143,16 @@ public sealed class NvencH264Encoder : IVideoEncoder
             }
             _sessionAttempted = true;
 
+            _hevc = hevc;
+            _codecGuid = hevc ? NvEncCodecGuids.Hevc : NvEncCodecGuids.H264;
             _presetGuid = preset;
-            _temporalAq = temporalAq && IsTemporalAqSupported();
+            _temporalAq = temporalAq && IsCapSupported(NvEncCaps.SupportTemporalAq);
+            _intraRefresh = intraRefresh && IsCapSupported(NvEncCaps.SupportIntraRefresh);
+            // One refresh wave sweeps the picture in ~1/6 s: short enough that a loss heals
+            // before it is noticed, long enough that no single frame becomes an IDR-sized burst.
+            _intraRefreshFrames = (uint)Math.Clamp(_fps / 6, 4, 30);
             _config = _encoder.GetEncodePresetConfigEx(
-                NvEncCodecGuids.H264,
+                _codecGuid,
                 _presetGuid,
                 NvEncTuningInfo.UltraLowLatency).PresetCfg;
 
@@ -136,13 +166,13 @@ public sealed class NvencH264Encoder : IVideoEncoder
         }
     }
 
-    private bool IsTemporalAqSupported()
+    private bool IsCapSupported(NvEncCaps cap)
     {
         try
         {
-            var caps = new NvEncCapsParam { CapsToQuery = NvEncCaps.SupportTemporalAq };
+            var caps = new NvEncCapsParam { CapsToQuery = cap };
             int supported = 0;
-            _encoder.GetEncodeCaps(NvEncCodecGuids.H264, ref caps, ref supported);
+            _encoder.GetEncodeCaps(_codecGuid, ref caps, ref supported);
             return supported != 0;
         }
         catch
@@ -157,7 +187,7 @@ public sealed class NvencH264Encoder : IVideoEncoder
         uint oneFrameVbv = Math.Max(32_000u, bitrate / (uint)_fps);
 
         _config.Version = NV_ENC_CONFIG_VER;
-        _config.ProfileGuid = NvEncProfileGuids.H264High;
+        _config.ProfileGuid = _hevc ? NvEncProfileGuids.HevcMain : NvEncProfileGuids.H264High;
         _config.GopLength = uint.MaxValue;
         _config.FrameIntervalP = 1;
         _config.FrameFieldMode = NvEncParamsFrameFieldMode.Frame;
@@ -177,19 +207,59 @@ public sealed class NvencH264Encoder : IVideoEncoder
         rc.LowDelayKeyFrameScale = 1;
         _config.RcParams = rc;
 
-        var h264 = _config.EncodeCodecConfig.H264Config;
-        h264.DisableSPSPPS = false;
-        h264.RepeatSPSPPS = true;
-        h264.IdrPeriod = uint.MaxValue;
-        h264.MaxNumRefFrames = 1;
-        h264.ChromaFormatIDC = 1;
-        h264.SliceMode = 0;
-        h264.SliceModeData = 0;
+        // Intra refresh is on-demand only (PROTOCOL.md §2.3 REQUEST_REFRESH): the periodic
+        // interval is effectively infinite and Submit starts one wave per reported loss via
+        // ForceIntraRefreshWithFrameCnt, so steady-state quality is unchanged.
+        const uint OnDemandOnlyPeriod = 1u << 30;
 
-        // Explicit color signaling: BT.709 primaries/transfer/matrix, full range 0-255.
-        // MUST match Nv12Converter's VideoProcessorSetOutputColorSpace — otherwise players
-        // guess (commonly BT.601 limited) and desktop/game colors visibly shift.
-        var vui = h264.H264VUIParameters;
+        if (_hevc)
+        {
+            var hevc = _config.EncodeCodecConfig.HevcConfig;
+            hevc.DisableSPSPPS = false;
+            hevc.RepeatSPSPPS = true;
+            hevc.IdrPeriod = uint.MaxValue;
+            hevc.MaxNumRefFramesInDPB = 1;
+            hevc.ChromaFormatIDC = 1;
+            hevc.SliceMode = 0;
+            hevc.SliceModeData = 0;
+            hevc.EnableIntraRefresh = _intraRefresh;
+            hevc.OutputRecoveryPointSEI = _intraRefresh;
+            hevc.IntraRefreshPeriod = _intraRefresh ? OnDemandOnlyPeriod : 0;
+            hevc.IntraRefreshCnt = _intraRefresh ? _intraRefreshFrames : 0;
+            hevc.HevcVUIParameters = ConfigureVui(hevc.HevcVUIParameters);
+            _config.EncodeCodecConfig.HevcConfig = hevc;
+        }
+        else
+        {
+            var h264 = _config.EncodeCodecConfig.H264Config;
+            h264.DisableSPSPPS = false;
+            h264.RepeatSPSPPS = true;
+            h264.IdrPeriod = uint.MaxValue;
+            h264.MaxNumRefFrames = 1;
+            h264.ChromaFormatIDC = 1;
+            h264.SliceMode = 0;
+            h264.SliceModeData = 0;
+            h264.EnableIntraRefresh = _intraRefresh;
+            h264.OutputRecoveryPointSEI = _intraRefresh;
+            h264.IntraRefreshPeriod = _intraRefresh ? OnDemandOnlyPeriod : 0;
+            h264.IntraRefreshCnt = _intraRefresh ? _intraRefreshFrames : 0;
+            h264.H264VUIParameters = ConfigureVui(h264.H264VUIParameters);
+            _config.EncodeCodecConfig.H264Config = h264;
+        }
+    }
+
+    /// <summary>
+    /// Explicit color signaling: BT.709 primaries/transfer/matrix, full range 0-255. MUST match
+    /// Nv12Converter's VideoProcessorSetOutputColorSpace — otherwise players guess (commonly
+    /// BT.601 limited) and desktop/game colors visibly shift.
+    ///
+    /// BitstreamRestrictionFlag makes NVENC write bitstream_restriction (zero reorder frames,
+    /// a one-picture DPB). Without it many Android TV decoders assume the level's worst-case
+    /// reorder depth and hold several decoded pictures before output — the 100-160 ms
+    /// decode-to-surface floor seen in field logs.
+    /// </summary>
+    private static NvEncConfigH264VuiParameters ConfigureVui(NvEncConfigH264VuiParameters vui)
+    {
         vui.VideoSignalTypePresentFlag = 1;
         vui.VideoFormat = NvEncVuiVideoFormat.Unspecified;
         vui.VideoFullRangeFlag = 1;
@@ -197,8 +267,8 @@ public sealed class NvencH264Encoder : IVideoEncoder
         vui.ColourPrimaries = NvEncVuiColorPrimaries.Bt709;
         vui.TransferCharacteristics = NvEncVuiTransferCharacteristic.Bt709;
         vui.ColourMatrix = NvEncVuiMatrixCoeffs.Bt709;
-        h264.H264VUIParameters = vui;
-        _config.EncodeCodecConfig.H264Config = h264;
+        vui.BitstreamRestrictionFlag = 1;
+        return vui;
     }
 
     private unsafe void InitializeEncoder()
@@ -213,7 +283,7 @@ public sealed class NvencH264Encoder : IVideoEncoder
     private unsafe NvEncInitializeParams CreateInitializeParams(NvEncConfig* config) => new()
     {
         Version = NV_ENC_INITIALIZE_PARAMS_VER,
-        EncodeGuid = NvEncCodecGuids.H264,
+        EncodeGuid = _codecGuid,
         PresetGuid = _presetGuid,
         EncodeWidth = (uint)_width,
         EncodeHeight = (uint)_height,
@@ -252,6 +322,9 @@ public sealed class NvencH264Encoder : IVideoEncoder
 
                 bool forceIdr = _forceIdr;
                 _forceIdr = false;
+                // An IDR already resets every reference, so it supersedes a pending wave.
+                bool forceRefresh = _forceRefresh && !forceIdr;
+                _forceRefresh = false;
                 var picture = new NvEncPicParams
                 {
                     Version = NV_ENC_PIC_PARAMS_VER,
@@ -268,6 +341,23 @@ public sealed class NvencH264Encoder : IVideoEncoder
                         ? (uint)(NvEncPicFlags.FlagForceidr | NvEncPicFlags.FlagOutputSpspps)
                         : 0,
                 };
+                if (forceRefresh)
+                {
+                    var codecParams = picture.CodecPicParams;
+                    if (_hevc)
+                    {
+                        var hevcParams = codecParams.HevcPicParams;
+                        hevcParams.ForceIntraRefreshWithFrameCnt = _intraRefreshFrames;
+                        codecParams.HevcPicParams = hevcParams;
+                    }
+                    else
+                    {
+                        var h264Params = codecParams.H264PicParams;
+                        h264Params.ForceIntraRefreshWithFrameCnt = _intraRefreshFrames;
+                        codecParams.H264PicParams = h264Params;
+                    }
+                    picture.CodecPicParams = codecParams;
+                }
 
                 _encoder.EncodePicture(ref picture);
                 var locked = _encoder.LockBitstream(ref _bitstream);
@@ -313,6 +403,19 @@ public sealed class NvencH264Encoder : IVideoEncoder
         var created = new RegisteredTexture(registration, lease);
         _textures.Add(key, created);
         return created;
+    }
+
+    public void RequestRefresh()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+            if (_intraRefresh)
+                _forceRefresh = true;
+            else
+                _forceIdr = true;
+        }
     }
 
     public void RequestIdr()

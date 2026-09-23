@@ -66,6 +66,7 @@ public sealed class StreamSession : IDisposable
     private Nv12Converter? _converter;
     private IVideoEncoder? _encoder;
     private Thread? _captureThread;
+    private Thread? _cursorThread;
     private CancellationTokenSource? _captureCts;
     private ID3D11Texture2D? _lastNv12;
     private int _endpointIdrPending;
@@ -77,6 +78,11 @@ public sealed class StreamSession : IDisposable
 
     // Quality / authoritative streamed dimensions (PROTOCOL.md §2.3).
     private string _quality = "native";
+    // Per-stream codec negotiation (PROTOCOL.md §2.3): what the client offered in
+    // START_STREAM, and whether this stream repairs loss with intra refresh.
+    private bool _clientAcceptsHevc;
+    private bool _clientAcceptsRefresh;
+    private bool _refreshRecovery;
     private int _streamWidth;
     private int _streamHeight;
 
@@ -87,6 +93,7 @@ public sealed class StreamSession : IDisposable
     private int _idrSinceLastStats;
     private readonly Queue<long> _idrTimes = new();
     private long _lastIdrGenMs = -1000;
+    private long _lastRefreshGenMs = -1000;
     private int _bestTransportMs = int.MaxValue;
     private int _bestDecodeToSurfaceMs = int.MaxValue;
     // Consecutive stats intervals where transport p95 sat above the healthy budget. We require a
@@ -99,6 +106,9 @@ public sealed class StreamSession : IDisposable
     // A congestion cut pins the session ceiling at the new safe rate; only a full minute without
     // congestion permits a small ceiling probe.
     private int _bitrateCeilingKbps = ServerOptions.DefaultMaxBitrateKbps;
+    // The rate that was running when the last congestion cut fired (0 = no cut this stream).
+    // Ceiling probes close the gap to it by halves — fast while far below, careful near it.
+    private int _congestedAtKbps;
     private long _lastBitrateChangeMs = long.MinValue / 4;
     private long _lastCongestionMs = long.MinValue / 4;
     private long _lastCeilingRaiseMs;
@@ -117,6 +127,10 @@ public sealed class StreamSession : IDisposable
     // congestion cut became permanently unrecoverable (probing requires this budget).
     private const int DecoderLatencyBudgetMs = 200;
     private const int DecoderBaselineSlackMs = 40;
+    /// <summary>Host-cursor poll period (~60 Hz) and the unchanged-position resend period
+    /// for [CursorWatchLoop] — the resend repairs a lost DSMC datagram.</summary>
+    private const int CursorPollMs = 16;
+    private const long CursorResendMs = 500;
     private const long SlowBitrateReconfigureMs = 50;
 
     // Stats surfaced to the console (Program reads these)
@@ -247,6 +261,7 @@ public sealed class StreamSession : IDisposable
             case "INPUT_STOP": StopInput(); break;
             case "STOP_STREAM": OnStopStream(); break;
             case "REQUEST_IDR": OnRequestIdr(); break;
+            case "REQUEST_REFRESH": OnRequestRefresh(); break;
             case "STATS": OnStats(payload); break;
             default: /* Unknown types MUST be ignored (PROTOCOL.md §2). */ break;
         }
@@ -363,6 +378,8 @@ public sealed class StreamSession : IDisposable
         // Quality is fixed per stream: honor an explicit "720p"/"native", but fall back to the
         // server-wide default when the client sends no quality field (old v0.4.0 clients).
         _quality = ResolveRequestedQuality(msg?.Quality);
+        _clientAcceptsHevc = msg?.Codecs?.Any(c => string.Equals(c, "hevc", StringComparison.OrdinalIgnoreCase)) == true;
+        _clientAcceptsRefresh = msg?.Recovery?.Any(r => string.Equals(r, "refresh", StringComparison.OrdinalIgnoreCase)) == true;
 
         BeginStream();
     }
@@ -386,11 +403,13 @@ public sealed class StreamSession : IDisposable
                 _streamWidth,
                 _streamHeight,
                 Fps,
-                _encoder!.BackendName,
+                _encoder!.Codec,
+                _refreshRecovery ? "refresh" : "idr",
+                _encoder.BackendName,
                 _clockBaseUs));
             _state = SessionState.Streaming;
             Console.WriteLine($"[session] streaming started: {_streamWidth}x{_streamHeight}@{Fps} " +
-                              $"({_quality}), start bitrate {_currentBitrateKbps} kbps, media port {_sender.Port}.");
+                              $"({_quality}, {_encoder.Codec}, {(_refreshRecovery ? "refresh" : "idr")} recovery), start bitrate {_currentBitrateKbps} kbps, media port {_sender.Port}.");
             AsyncLogger.Info($"[session] Stream successfully started on media port {_sender.Port}. Encoder: {_encoder.BackendName}");
         }
         catch (EncoderUnavailableException ex)
@@ -736,7 +755,7 @@ public sealed class StreamSession : IDisposable
             Fps);
 
         // Games/movies: start high so first-frame quality does not need 2-3 probe rounds
-        // to look right; probing above this still steps +1000 kbps per clean interval.
+        // to look right; clean-path probes then close half the gap to the cap per step.
         _currentBitrateKbps = Math.Min(16000, _maxBitrateKbps); // start bitrate (PROTOCOL.md §4)
         _encoder = EncoderFactory.Create(
             _duplicator.Device,
@@ -744,8 +763,10 @@ public sealed class StreamSession : IDisposable
             _streamHeight,
             Fps,
             _currentBitrateKbps,
+            allowHevc: _clientAcceptsHevc && !HevcDisabledByOperator(),
             _converter.RegistrationProbe);
         _encoder.OnEncodedFrame = OnEncoded;
+        _refreshRecovery = _clientAcceptsRefresh && _encoder.SupportsRefreshRecovery;
 
         // Shape only oversized IDR bursts (token-bucket); normal frames pass untouched.
         _sender!.SetPacingRate(_currentBitrateKbps, Fps);
@@ -760,6 +781,7 @@ public sealed class StreamSession : IDisposable
         _cleanStreak = 0;
         _idrSinceLastStats = 0;
         _bitrateCeilingKbps = _maxBitrateKbps;
+        _congestedAtKbps = 0;
         _lastCongestionMs = long.MinValue / 4;
         _lastBitrateChangeMs = NowMs();
         _lastCeilingRaiseMs = _lastBitrateChangeMs;
@@ -793,6 +815,59 @@ public sealed class StreamSession : IDisposable
         };
         _streaming = true;
         _captureThread.Start();
+
+        var cursorToken = _captureCts.Token;
+        _cursorThread = new Thread(() => CursorWatchLoop(cursorToken))
+        {
+            IsBackground = true,
+            Name = "cursor-watch",
+        };
+        _cursorThread.Start();
+    }
+
+    /// <summary>
+    /// Host-cursor mirror (PROTOCOL.md §5 DSMC): DXGI frames never contain the pointer, and
+    /// DSMC used to answer only this session's own DSMI motion — so a controller-role
+    /// session (a separate session with no media sender), the phone pad before its first
+    /// packet, or the PC's physical mouse moved the real pointer while the viewer's overlay
+    /// stayed hidden or frozen. Polling the actual cursor and sending DSMC on change covers
+    /// every input source; the periodic resend repairs a lost datagram. Deliberately a
+    /// separate thread so the tuned capture loop stays untouched.
+    /// </summary>
+    private void CursorWatchLoop(CancellationToken ct)
+    {
+        CursorPosition? last = null;
+        uint sequence = 0;
+        long lastSentMs = 0;
+        bool hadClient = false;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var sender = Volatile.Read(ref _sender);
+                bool hasClient = sender?.HasClient == true;
+                if (hasClient && !hadClient)
+                    last = null; // fresh endpoint: send the current position immediately
+                hadClient = hasClient;
+                if (hasClient)
+                {
+                    CursorPosition? position = RemoteMouseManager.GetNormalizedCursorPosition();
+                    long now = NowMs();
+                    if (position.HasValue &&
+                        (position != last || now - lastSentMs >= CursorResendMs))
+                    {
+                        sender!.SendCursorPosition(sequence++, position.Value);
+                        last = position;
+                        lastSentMs = now;
+                    }
+                }
+                ct.WaitHandle.WaitOne(CursorPollMs);
+            }
+        }
+        catch (Exception ex)
+        {
+            AsyncLogger.Error($"[cursor] Cursor watch loop terminated: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -971,6 +1046,8 @@ public sealed class StreamSession : IDisposable
         try { _captureCts?.Cancel(); } catch { }
         try { _captureThread?.Join(1500); } catch { }
         _captureThread = null;
+        try { _cursorThread?.Join(500); } catch { }
+        _cursorThread = null;
 
         try { _encoder?.Dispose(); } catch { }
         try { _converter?.Dispose(); } catch { }
@@ -1058,6 +1135,35 @@ public sealed class StreamSession : IDisposable
             _idrTimes.Clear(); // avoid re-triggering off the same burst
         }
     }
+
+    /// <summary>
+    /// Loss repair on a refresh-capable stream (PROTOCOL.md §2.3): the client kept decoding
+    /// across the gap, so one gradual intra-refresh wave heals it without the IDR-sized burst
+    /// and the post-IDR blur. Congestion is still judged from STATS framesDropped, which the
+    /// client counts for every skipped frame. A stream that did not negotiate refresh treats
+    /// the message exactly like REQUEST_IDR.
+    /// </summary>
+    private void OnRequestRefresh()
+    {
+        if (!_refreshRecovery)
+        {
+            OnRequestIdr();
+            return;
+        }
+        long now = NowMs();
+        // Same 300 ms generation limit as IDRs: one wave already covers every loss inside it.
+        if (now - _lastRefreshGenMs >= 300)
+        {
+            _encoder?.RequestRefresh();
+            _lastRefreshGenMs = now;
+        }
+    }
+
+    /// <summary>DESKSTREAM_CODEC=h264 pins H.264 even for HEVC-capable clients (debugging,
+    /// or a TV whose HEVC decoder misbehaves).</summary>
+    private static bool HevcDisabledByOperator() =>
+        string.Equals(Environment.GetEnvironmentVariable("DESKSTREAM_CODEC")?.Trim(), "h264",
+            StringComparison.OrdinalIgnoreCase);
 
     private void OnStats(ReadOnlySpan<byte> payload)
     {
@@ -1193,6 +1299,7 @@ public sealed class StreamSession : IDisposable
             // The cut rate is now the known-safe ceiling. It may be probed upward only after a
             // full minute without loss/backlog, in 500 kbps steps.
             _bitrateCeilingKbps = Math.Min(_bitrateCeilingKbps, next);
+            _congestedAtKbps = previous;
             _lastCeilingRaiseMs = now;
             AsyncLogger.Info(
                 $"[adaptation] DOWN {previous} -> {next} kbps ({reason}; ceiling {_bitrateCeilingKbps})");
@@ -1214,24 +1321,34 @@ public sealed class StreamSession : IDisposable
                 _bitrateCeilingKbps >= _maxBitrateKbps)
                 return false;
 
-            _bitrateCeilingKbps = Math.Min(
-                _maxBitrateKbps,
-                _bitrateCeilingKbps + BitrateProbeStepKbps);
+            // Below the rate that last congested, halve the remaining gap per probe (a long
+            // clean stretch proved the cause is gone). At/above it, creep in minimum steps.
+            int raise = _congestedAtKbps > _bitrateCeilingKbps
+                ? HalfGapStep(_congestedAtKbps - _bitrateCeilingKbps)
+                : BitrateProbeStepKbps;
+            _bitrateCeilingKbps = Math.Min(_maxBitrateKbps, _bitrateCeilingKbps + raise);
             _lastCeilingRaiseMs = now;
             AsyncLogger.Info($"[adaptation] clean-path ceiling probe -> {_bitrateCeilingKbps} kbps");
         }
 
+        // Big steps while far below the ceiling (startup at 16 Mbps under a 30 Mbps cap used
+        // to need 14 probes ~3.5 min to arrive), small steps close to it.
         int ceiling = Math.Min(_maxBitrateKbps, _bitrateCeilingKbps);
-        int next = Math.Min(ceiling, _currentBitrateKbps + BitrateProbeStepKbps);
+        int step = HalfGapStep(ceiling - _currentBitrateKbps);
+        int next = Math.Min(ceiling, _currentBitrateKbps + step);
         if (next == _currentBitrateKbps)
             return false;
         int previous = _currentBitrateKbps;
         if (!ApplyBitrate(next))
             return false;
         AsyncLogger.Info(
-            $"[adaptation] UP {previous} -> {next} kbps (+{BitrateProbeStepKbps}; ceiling {ceiling})");
+            $"[adaptation] UP {previous} -> {next} kbps (+{next - previous}; ceiling {ceiling})");
         return true;
     }
+
+    /// <summary>Half the gap rounded down to 500 kbps, never below the minimum probe step.</summary>
+    private static int HalfGapStep(int gapKbps) =>
+        Math.Max(BitrateProbeStepKbps, gapKbps / 2 / 500 * 500);
 
     private bool ApplyBitrate(int kbps)
     {

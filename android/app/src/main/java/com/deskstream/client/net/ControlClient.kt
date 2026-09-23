@@ -50,6 +50,8 @@ object ControlClient {
     private const val PING_INTERVAL_MS = 2000L
     private const val SILENCE_TIMEOUT_MS = 6000L
     private const val IDR_MIN_INTERVAL_MS = 300L
+    /** One wave already covers every loss inside it; the server applies the same 300 ms. */
+    private const val REFRESH_MIN_INTERVAL_MS = 300L
     private const val MAX_BACKOFF_MS = 5000L
     private const val INITIAL_BACKOFF_MS = 500L
 
@@ -93,6 +95,7 @@ object ControlClient {
     @Volatile private var lastReceivedAt = 0L
     private val idrGate = Any()
     private var lastIdrRequestAt = 0L
+    private var lastRefreshRequestAt = 0L
     @Volatile private var explicitlyDisconnected = false
     @Volatile private var lastSentToken = ""
     @Volatile private var backoffMs = INITIAL_BACKOFF_MS
@@ -162,8 +165,16 @@ object ControlClient {
         scope.launch { writeFrame(ClientMessages.pairCode(pin)) }
     }
 
-    fun startStream(maxBitrateKbps: Int = 30000, fps: Int = 60, quality: String = "native") {
-        scope.launch { writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, quality)) }
+    fun startStream(
+        maxBitrateKbps: Int = 30000,
+        fps: Int = 60,
+        quality: String = "native",
+        codecs: List<String> = listOf("h264"),
+        recovery: List<String> = emptyList()
+    ) {
+        scope.launch {
+            writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, quality, codecs, recovery))
+        }
     }
 
     fun stopStream() {
@@ -261,6 +272,20 @@ object ControlClient {
             }
         }
         if (shouldSend) scope.launch { writeFrame(ClientMessages.requestIdr()) }
+    }
+
+    /** REQUEST_REFRESH (§2.3), rate-limited like [requestIdr] but on its own window: a
+     * refresh must never swallow a later hard IDR request (decoder restart), or vice versa. */
+    fun requestRefresh() {
+        val now = SystemClock.elapsedRealtime()
+        val shouldSend = synchronized(idrGate) {
+            if (now - lastRefreshRequestAt < REFRESH_MIN_INTERVAL_MS) false
+            else {
+                lastRefreshRequestAt = now
+                true
+            }
+        }
+        if (shouldSend) scope.launch { writeFrame(ClientMessages.requestRefresh()) }
     }
 
     /** A stream restart must never inherit a rate-limit window from the previous media epoch. */
@@ -497,6 +522,7 @@ object ControlClient {
 
     private fun resetIdrLimiter() = synchronized(idrGate) {
         lastIdrRequestAt = 0L
+        lastRefreshRequestAt = 0L
     }
 
     private fun stopPingAndWatchdog() {

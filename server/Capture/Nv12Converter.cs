@@ -79,7 +79,7 @@ public sealed class Nv12Converter : IDisposable
 
         // Desktop BGRA is full-range sRGB. Pin the YUV conversion explicitly: BT.709
         // matrix (driver default is BT.601) and full-range 0-255 output (driver default
-        // is studio 16-235). NvencH264Encoder.Configure signals the identical VUI — these
+        // is studio 16-235). NvencEncoder.ConfigureVui signals the identical VUI — these
         // two must stay in sync or players guess and colors shift.
         _videoContext.VideoProcessorSetOutputColorSpace(_processor, new VideoProcessorColorSpace
         {
