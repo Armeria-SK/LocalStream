@@ -109,6 +109,9 @@ public sealed class StreamSession : IDisposable
     // The rate that was running when the last congestion cut fired (0 = no cut this stream).
     // Ceiling probes close the gap to it by halves — fast while far below, careful near it.
     private int _congestedAtKbps;
+    // Rate before the latest upward probe (0 = the last change was not a probe). Congestion that
+    // arrives while that probe is still settling is blamed on the probe and reverted at once.
+    private int _preProbeKbps;
     private long _lastBitrateChangeMs = long.MinValue / 4;
     private long _lastCongestionMs = long.MinValue / 4;
     private long _lastCeilingRaiseMs;
@@ -787,6 +790,7 @@ public sealed class StreamSession : IDisposable
         _idrSinceLastStats = 0;
         _bitrateCeilingKbps = _maxBitrateKbps;
         _congestedAtKbps = 0;
+        _preProbeKbps = 0;
         _lastCongestionMs = long.MinValue / 4;
         _lastBitrateChangeMs = NowMs();
         _lastCeilingRaiseMs = _lastBitrateChangeMs;
@@ -1305,6 +1309,25 @@ public sealed class StreamSession : IDisposable
         // Reconfiguring again during that drain produced the 200-600 ms freezes seen in field logs.
         if (now - _lastBitrateChangeMs < BitrateSettleMs)
         {
+            // The settle hold protects the drain after a CUT. After an upward probe it used to
+            // keep the probed rate for up to 15 s of loss/backlog (field log: 460 ms backlog and
+            // 26% drops right after 26.5 -> 28 Mbps, never cut). Undo the probe instead - one
+            // reconfiguration back to the rate that was known to work.
+            if (_preProbeKbps > 0 && _preProbeKbps < _currentBitrateKbps)
+            {
+                int probed = _currentBitrateKbps;
+                int back = _preProbeKbps;
+                _preProbeKbps = 0;
+                if (ApplyBitrate(back))
+                {
+                    _bitrateCeilingKbps = Math.Min(_bitrateCeilingKbps, back);
+                    _congestedAtKbps = probed;
+                    _lastCeilingRaiseMs = now;
+                    AsyncLogger.Info(
+                        $"[adaptation] PROBE REVERTED {probed} -> {back} kbps ({reason}; ceiling {_bitrateCeilingKbps})");
+                }
+                return;
+            }
             AsyncLogger.Debug(
                 $"[adaptation] DOWN held while bitrate settles at {_currentBitrateKbps} kbps ({reason})");
             return;
@@ -1320,6 +1343,7 @@ public sealed class StreamSession : IDisposable
         }
 
         int previous = _currentBitrateKbps;
+        _preProbeKbps = 0;
         if (ApplyBitrate(next))
         {
             // The cut rate is now the known-safe ceiling. It may be probed upward only after a
@@ -1367,6 +1391,7 @@ public sealed class StreamSession : IDisposable
         int previous = _currentBitrateKbps;
         if (!ApplyBitrate(next))
             return false;
+        _preProbeKbps = previous;
         AsyncLogger.Info(
             $"[adaptation] UP {previous} -> {next} kbps (+{next - previous}; ceiling {ceiling})");
         return true;

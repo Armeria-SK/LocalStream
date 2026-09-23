@@ -497,7 +497,9 @@ Inputs: `STATS` messages and IDR request rate.
   last steps near it stay small. A congestion cut pins the remembered ceiling at the cut rate
   and remembers the rate that congested; only a full 60 s without congestion permits the
   ceiling to rise, at most once every 30 s — by half the gap to that congested rate while
-  below it, by 1000 kbps at or above it. If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
+  below it, by 1000 kbps at or above it. Congestion that arrives while an upward probe is still
+  settling reverts that probe immediately (the settle hold only protects the drain after a
+  cut). If the hardware driver's live reconfiguration takes at least 50 ms or is rejected,
   disable further upward probes for that stream; emergency downward changes remain available.
 - Start at min(16000, maxBitrateKbps) — high enough that games/movies look right in the
   first frame instead of needing two or three probe rounds.
