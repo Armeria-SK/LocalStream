@@ -631,19 +631,26 @@ class VideoDecoder(
         private fun mimeFor(codec: String): String =
             if (codec.equals("hevc", ignoreCase = true)) MIME_HEVC else MIME_AVC
 
+        /** Stream sizes a PC desktop actually produces (720p mode, then common native sizes). */
+        private val STREAM_SIZES = listOf(
+            1280 to 720, 1920 to 1080, 2560 to 1440, 3440 to 1440, 3840 to 2160
+        )
+
         /**
          * Codecs to offer in START_STREAM (§2.3), in preference order. HEVC is offered only
-         * when a hardware HEVC decoder handles at least 1080p60 and every size the best
-         * hardware H.264 decoder does — the server picks the resolution, so HEVC must never
-         * be the reason a stream cannot decode.
+         * when a hardware HEVC decoder plays 1080p60 and every real stream size at 60 fps
+         * that hardware H.264 plays — the server picks the resolution, so HEVC must never be
+         * the reason a stream cannot decode. Comparing concrete sizes (not the advertised
+         * maxima) matters: AVC decoders often report 4096x2304 while HEVC reports 3840x2160,
+         * and a raw max-vs-max comparison rejected HEVC on TVs that decode 4K HEVC fine.
          */
         fun supportedCodecs(): List<String> {
             return try {
                 val infos = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
-                val hevc = bestHardwareSize(infos, MIME_HEVC) ?: return listOf("h264")
-                val avc = bestHardwareSize(infos, MIME_AVC)
-                val hevcFits = hevc.first >= 1920 && hevc.second >= 1080 &&
-                    (avc == null || (hevc.first >= avc.first && hevc.second >= avc.second))
+                val hevcSizes = hardwareStreamSizes(infos, MIME_HEVC)
+                val avcSizes = hardwareStreamSizes(infos, MIME_AVC)
+                val hevcFits = (1920 to 1080) in hevcSizes && hevcSizes.containsAll(avcSizes)
+                Log.i(TAG, "codec offer: hevc=$hevcSizes avc=$avcSizes -> hevc=${if (hevcFits) "yes" else "no"}")
                 if (hevcFits) listOf("hevc", "h264") else listOf("h264")
             } catch (error: Exception) {
                 Log.w(TAG, "codec enumeration failed; offering H.264 only", error)
@@ -651,9 +658,9 @@ class VideoDecoder(
             }
         }
 
-        /** Largest width/height any hardware decoder for [mime] supports at 60 fps. */
-        private fun bestHardwareSize(infos: Array<MediaCodecInfo>, mime: String): Pair<Int, Int>? {
-            var best: Pair<Int, Int>? = null
+        /** [STREAM_SIZES] that some hardware decoder for [mime] plays at 60 fps. */
+        private fun hardwareStreamSizes(infos: Array<MediaCodecInfo>, mime: String): Set<Pair<Int, Int>> {
+            val sizes = mutableSetOf<Pair<Int, Int>>()
             for (info in infos) {
                 if (info.isEncoder || info.supportedTypes.none { it.equals(mime, ignoreCase = true) }) continue
                 val hardware = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -667,14 +674,11 @@ class VideoDecoder(
                 } catch (_: Exception) {
                     null
                 } ?: continue
-                val width = video.supportedWidths.upper
-                val height = video.supportedHeights.upper
-                if (!video.areSizeAndRateSupported(minOf(width, 1920), minOf(height, 1080), 60.0)) continue
-                if (best == null || width.toLong() * height > best.first.toLong() * best.second) {
-                    best = width to height
+                for (size in STREAM_SIZES) {
+                    if (video.areSizeAndRateSupported(size.first, size.second, 60.0)) sizes += size
                 }
             }
-            return best
+            return sizes
         }
 
         /**

@@ -175,8 +175,8 @@ answers with the codec it actually encodes in `STREAM_STARTED.codec` — `"hevc"
 client offered it and the encoder supports it (NVENC; the Media Foundation fallback is H.264
 only), otherwise `"h264"`. Both are Annex-B with in-band parameter sets (VPS/SPS/PPS for HEVC)
 on every IDR, carried unchanged by §3. An operator can pin H.264 with `DESKSTREAM_CODEC=h264`.
-An Android client offers HEVC only when a hardware HEVC decoder covers at least 1080p60 and
-every size its best hardware H.264 decoder covers.
+An Android client offers HEVC only when hardware HEVC decodes 1080p60 and every common
+stream size (720p, 1080p, 1440p, 3440x1440, 2160p) at 60 fps that hardware H.264 decodes.
 
 `START_STREAM.recovery` is an OPTIONAL array of loss-recovery modes the client implements.
 `"refresh"` means the client keeps decoding across a lost frame (§3.1) and repairs it with

@@ -1343,7 +1343,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val audio = lastAudioStats
         binding.tvStats.text = buildString {
             append("STATE  LIVE · ${ControlClient.serverIp}\n")
-            append("VIDEO  ${lastStreamWidth}×${lastStreamHeight} @ $lastStreamFps · ${lastStreamCodec.uppercase()} · $lastStreamRecovery recovery\n")
+            append("VIDEO  ${lastStreamWidth}×${lastStreamHeight} @ $lastStreamFps · ${lastStreamCodec.uppercase()} (offered ${offeredCodecs.joinToString("/")}) · $lastStreamRecovery recovery\n")
             append("ENC    $lastEncoderBackend")
             if (negotiatedBitrateKbps > 0) append(" · $negotiatedBitrateKbps kbps target")
             append('\n')
