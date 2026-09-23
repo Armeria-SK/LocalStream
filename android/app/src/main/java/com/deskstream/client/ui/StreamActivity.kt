@@ -222,6 +222,10 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         applyImmersiveMode()
 
         binding.surfaceView.holder.addCallback(this)
+        // A non-drawing view is left out of the window over a SurfaceView, and that region
+        // only updates on layout; the translated cursor then vanished in clean screen. A
+        // drawing full-screen layer keeps the cursor composited (see activity_stream.xml).
+        binding.cursorLayer.setWillNotDraw(false)
         binding.streamRoot.setOnClickListener {
             toggleDiagnostics()
         }
