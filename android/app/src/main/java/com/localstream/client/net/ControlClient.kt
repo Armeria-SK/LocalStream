@@ -166,7 +166,7 @@ object ControlClient {
     }
 
     fun startStream(
-        maxBitrateKbps: Int = 30000,
+        maxBitrateKbps: Int = 50000,
         fps: Int = 60,
         quality: String = "native",
         codecs: List<String> = listOf("h264"),

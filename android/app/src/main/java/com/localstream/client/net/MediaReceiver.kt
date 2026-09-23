@@ -474,9 +474,9 @@ class MediaReceiver(
         private const val INPUT_SEND_QUEUE_CAPACITY = 16
         private const val RECV_PACKET_BUFFER_BYTES = 1500
         // Sized for the high-bitrate game/movie profile: the server can start at 16 Mbps and
-        // probe to 30 Mbps, and a P5-preset IDR can burst well past 300 KiB. A 512 KiB queue
+        // probe to 50 Mbps, and a P5-preset IDR can burst well past 300 KiB. A 512 KiB queue
         // overran during those bursts (dropped datagrams -> decode stalls); 4 MiB absorbs a
-        // full burst at 30 Mbps while latency stays governed by the sender's pacing, not by
+        // full burst at 50 Mbps while latency stays governed by the sender's pacing, not by
         // this queue, because packets are consumed as fast as Wi-Fi delivers them.
         private const val RECV_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024
         private const val SOCKET_TIMEOUT_MS = 1000

@@ -479,7 +479,7 @@ overlay; clients that do not recognize it ignore it.
 
 Inputs: `STATS` messages and IDR request rate.
 - The effective session ceiling is the smaller of `START_STREAM.maxBitrateKbps` and the
-  operator-configured server ceiling (30,000 kbps by default, never below 2,000 kbps;
+  operator-configured server ceiling (50,000 kbps by default, never below 2,000 kbps;
   `--max-bitrate-kbps` overrides).
 - **Down:** if a stats interval has at least 3 dropped frames or more than 3% loss,
   capture-to-receive p95 reaches 150 ms, transport p95 (capture-to-receive minus

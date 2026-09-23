@@ -1357,7 +1357,7 @@ public sealed class StreamSession : IDisposable
             AsyncLogger.Info($"[adaptation] clean-path ceiling probe -> {_bitrateCeilingKbps} kbps");
         }
 
-        // Big steps while far below the ceiling (startup at 16 Mbps under a 30 Mbps cap used
+        // Big steps while far below the ceiling (startup at 16 Mbps under the old 30 Mbps cap used
         // to need 14 probes ~3.5 min to arrive), small steps close to it.
         int ceiling = Math.Min(_maxBitrateKbps, _bitrateCeilingKbps);
         int step = HalfGapStep(ceiling - _currentBitrateKbps);

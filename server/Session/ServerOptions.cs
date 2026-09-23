@@ -10,7 +10,10 @@ namespace LocalStream.Server.Session;
 public sealed class ServerOptions
 {
     public const int MinimumBitrateKbps = 3000;
-    public const int DefaultMaxBitrateKbps = 30000;
+    // LAN-only product: 50 Mbps leaves 1080p60 HEVC headroom for high-motion scenes (30 Mbps
+    // still sat at QP ~34 there under the one-frame VBV); congestion adaptation cuts it on
+    // links that cannot carry it.
+    public const int DefaultMaxBitrateKbps = 50000;
 
     /// <summary>Reads the operator variable <c>LOCALSTREAM_{name}</c>.</summary>
     public static string? GetEnv(string name) =>

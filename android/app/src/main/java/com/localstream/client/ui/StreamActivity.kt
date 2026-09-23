@@ -1510,7 +1510,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     companion object {
         private const val TAG = "StreamActivity"
         private const val STATE_CONTROLS_HIDDEN = "controls_hidden"
-        private const val MAX_NATIVE_BITRATE_KBPS = 30000
+        private const val MAX_NATIVE_BITRATE_KBPS = 50000
         private const val MAX_720P_BITRATE_KBPS = 10000
         private const val TARGET_FPS = 60
         private const val MOUSE_HINT_VISIBLE_MS = 4500L

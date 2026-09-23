@@ -42,7 +42,7 @@ subsequent connections auto-authenticate (TOFU). Delete that file to force re-pa
 
 - `--quality native|720p` sets the default for clients that do not select quality themselves.
 - `--max-bitrate-kbps N` sets a hard encoder-target ceiling for every client. The default is
-  30,000 kbps (tuned for games/movies; sessions start at 16,000 kbps and probe up) and the
+  50,000 kbps (tuned for games/movies on a LAN; sessions start at 16,000 kbps and probe up) and the
   minimum is 2,000. On congested Wi-Fi, `--max-bitrate-kbps 12000` is a
   useful 1080p60 starting point; this ceiling excludes XOR-FEC, packet headers, and PCM audio.
 - `--media-port N` / `--audio-port N` change the fixed video/audio UDP ports (defaults
