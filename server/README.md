@@ -106,7 +106,7 @@ See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). Source layout:
 | `Encode/EncoderFactory.cs` | Backend selection: NVENC first, Media Foundation fallback |
 | `Encode/MfGuids.cs` / `Encode/NalUtil.cs` | MF/CODECAPI GUIDs; Annex-B NAL scanning |
 | `Net/DiscoveryResponder.cs` | UDP 47800 `DSPROBE1` → `DSREPLY` |
-| `Net/ControlServer.cs` | TCP 47801 length-prefixed JSON, keepalive, single client |
+| `Net/ControlServer.cs` | TCP 47801 length-prefixed JSON, keepalive, viewer/controller slots (§2.1) |
 | `Net/MediaSender.cs` | Packetizer (20-byte header, ≤1200 B) + XOR FEC + UDP send |
 | `Web/WebDashboard.cs` | Bounded loopback/LAN HTTP dashboard without HTTP.sys/URLACL |
 | `Service/Autostart.cs` | Interactive per-user logon Scheduled Task management |
@@ -114,7 +114,7 @@ See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). Source layout:
 | `Net/AudioSender.cs` | `DSAH` address learning + fixed 5 ms audio packetizer/UDP send |
 | `Input/VirtualGamepadManager.cs` | Up to four ViGEm-backed virtual Xbox 360 controllers |
 | `Input/RemoteMouseManager.cs` | Authenticated `SendInput` mouse motion/buttons with safe reset |
-| `Input/RemoteKeyboardManager.cs` | Ordered USB HID keyboard usages → `SendInput` scan codes with safe reset |
+| `Input/RemoteKeyboardManager.cs` | Ordered USB HID keyboard usages → `SendInput` scan codes, `KEYEVENTF_UNICODE` text bursts, safe reset |
 | `Session/StreamSession.cs` | Control state machine + adaptation controller (§4) |
 | `Session/PairingManager.cs` | TOFU PIN pairing, `paired_clients.json` persistence |
 | `Protocol/*.cs` | Wire DTOs and big-endian media header helpers |

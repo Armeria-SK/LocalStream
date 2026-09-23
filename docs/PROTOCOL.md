@@ -55,8 +55,12 @@ offset. Old peers may continue sending fieldless `PING`/`PONG` messages.
 Client connects and sends first:
 
 ```json
-{"type":"HELLO","ver":1,"clientId":"<random-uuid-stable-per-install>","clientName":"<model>","token":"<paired-token-or-empty>"}
+{"type":"HELLO","ver":1,"clientId":"<random-uuid-stable-per-install>","clientName":"<model>","token":"<paired-token-or-empty>","role":"viewer"}
 ```
+
+`role` selects the session role: `"viewer"` (default when absent — screen output) or
+`"controller"` (touchpad & keyboard for a second device). Servers before v0.8 ignore the
+field and treat every connection as a viewer.
 
 Server replies one of:
 
@@ -64,9 +68,29 @@ Server replies one of:
 {"type":"HELLO_OK","serverName":"<hostname>","width":1920,"height":1080}
 {"type":"PAIR_REQUIRED"}
 {"type":"ERROR","code":"BAD_VERSION","message":"..."}
+{"type":"ERROR","code":"BUSY","message":"screen output is already in use by another client"}
 ```
 
 `width`/`height` are the current primary-display dimensions.
+
+**Slots (v0.8+).** The server keeps one viewer slot and one controller slot, claimed from
+the role of the first `HELLO` and released when that socket closes. `BUSY` is answered
+*after* the first frame arrives rather than at TCP accept, which is what lets a rejected
+client reconnect with the other role; clients without a `role` field keep the single-viewer
+behavior of older versions. Pairing (§2.2) applies to controller connections unchanged.
+
+A controller session:
+
+- authenticates like any client but ignores `START_STREAM`, `AUDIO_START` and
+  `GAMEPAD_START` — it never owns the capture pipeline;
+- enables input with `INPUT_START` while still in `HELLO_OK` (there is no
+  `STREAM_STARTED` to wait for), then accepts `MOUSE_MOTION`, `MOUSE_BUTTON`,
+  `KEYBOARD_KEY` and `KEYBOARD_TEXT` on the control channel;
+- never reaches `STREAMING` (§5).
+
+A client that receives `BUSY` on a viewer attempt SHOULD offer the user the controller
+role and reconnect with `role:"controller"`; `BUSY` on a controller attempt means another
+controller is already attached.
 
 ### 2.2 Pairing (TOFU + PIN)
 
@@ -101,8 +125,10 @@ Client → server:
 {"type":"GAMEPAD_STOP"}
 {"type":"INPUT_START","mouse":true,"keyboard":true}
 {"type":"MOUSE_BUTTON","sequence":7,"button":"left","down":true}
+{"type":"MOUSE_MOTION","sequence":9,"absolute":false,"x":4,"y":-2,"hwheel":0,"vwheel":0}
 {"type":"MOUSE_RESET"}
 {"type":"KEYBOARD_KEY","sequence":12,"usage":4,"down":true}
+{"type":"KEYBOARD_TEXT","sequence":13,"text":"こんにちは"}
 {"type":"KEYBOARD_RESET"}
 {"type":"INPUT_STOP"}
 {"type":"STOP_STREAM"}
@@ -124,6 +150,10 @@ Server → client:
 {"type":"STREAM_STOPPED"}
 {"type":"BITRATE","kbps":14000}
 ```
+
+`MOUSE_MOTION` is the control-channel twin of the §3C UDP datagram, for connections with
+no learned media endpoint (the controller role, §2.1). `KEYBOARD_TEXT` shares the
+`KEYBOARD_KEY` sequence space (§2.4).
 
 `START_STREAM.quality` is an OPTIONAL string selecting the streamed resolution. Allowed values
 are `"native"` and `"720p"`; an unrecognized value becomes `"native"`. When the field is absent,
@@ -221,6 +251,13 @@ the same reset on every input/session teardown path. If Windows temporarily reje
 reset, the server retains the unreleased key state and retries before accepting more keyboard
 input. Final process/session teardown remains best-effort because Windows can reject all
 injection across integrity-level or desktop boundaries.
+
+`KEYBOARD_TEXT` (`{"sequence":…,"text":"…"}`) injects a string as `KEYEVENTF_UNICODE`
+down/up pairs — one per UTF-16 code unit — for characters with no HID key position: IME
+output such as kana, kanji or emoji. The single `sequence` covers the whole message and
+shares the same counter as `KEYBOARD_KEY`, because the host tracks one monotonic keyboard
+sequence per session; a duplicate or stale value drops the message exactly like
+`KEYBOARD_KEY`.
 
 ## 3. Media channel (UDP, server → client)
 
@@ -390,6 +427,10 @@ The server rejects motion before `INPUT_STARTED`, from a source other than the l
 endpoint, or with a stale sequence. Relative packets use newest-arrival order; lost deltas are
 not retransmitted. Button transitions stay on TCP so packet loss cannot leave a button stuck.
 
+Controller-role connections (§2.1) never learn a media endpoint, so they carry the same
+motion as the control-channel `MOUSE_MOTION` message (§2.3) instead of this datagram: one
+sequence space, one server-side monotonicity check — only the framing differs.
+
 After applying a motion packet the server may return a 16-byte authoritative cursor packet
 on the media channel: ASCII `DSMC`, version byte `1`, three reserved zero bytes, the echoed
 uint32 motion sequence, then uint16 normalized primary-display X and Y. The client uses this
@@ -433,6 +474,8 @@ Inputs: `STATS` messages and IDR request rate.
   `START_STREAM` again. Control socket death while backgrounded is fine — reconnect on
   foreground.
 - Auth failure with a stored token (server re-paired/reset) → clear token → PAIRING.
+- A `role:"controller"` connection (§2.1) stops at READY and never reaches STREAMING;
+  its reconnects re-declare the same role in `HELLO`.
 
 ## 6. Fixed ports (startup)
 

@@ -88,6 +88,11 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var cursorFallbackShown = false
     private var virtualCursorX = 0.5f
     private var virtualCursorY = 0.5f
+    /** Diagnostics: every outgoing motion packet [onOutgoingMousePacket] has been handed,
+     * counted before any guard, so the CURSOR stats line can show at a glance whether
+     * packets stopped (0/flat), DSMC never returned (dsmc=none), or only the fallback is
+     * drawing (fallback=shown). Reset per stream epoch in [stopReceivers]. */
+    private var cursorOutPackets = 0L
     private lateinit var prefs: Prefs
     private var wifiLock: WifiManager.WifiLock? = null
     /** Preferred stream quality ("native" or "720p"), persisted via [Prefs.streamQuality] and
@@ -787,15 +792,17 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun updateRemoteCursor(position: CursorPosition) {
-        // Real DSMC feedback exists — snap to it and permanently retire the integrated
-        // fallback so the two never fight over the same view.
-        cursorDsmcSeen = true
-        cursorFallbackJob?.cancel()
-        cursorFallbackJob = null
         if (mouseStatus != "live" || !mouseEnabledByUser) return
         val surface = binding.surfaceView
         val cursor = binding.tvRemoteCursor
         if (surface.width <= 0 || surface.height <= 0) return
+        // Real DSMC feedback is on screen now — snap to it and retire the integrated
+        // fallback so the two never fight over the same view. These flags move only after
+        // the guards above: a DSMC that arrives before input goes live (or before the
+        // surface exists) must not kill the fallback while nothing was actually drawn.
+        cursorDsmcSeen = true
+        cursorFallbackJob?.cancel()
+        cursorFallbackJob = null
         // The vector's top-left point is its hotspot, so no size-based centering offset is
         // needed. Use width/height - 1 to mirror the absolute-input normalization exactly.
         cursor.translationX = surface.x + position.x / 65535f * (surface.width - 1)
@@ -808,20 +815,25 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
      * feedback ([updateRemoteCursor]) draws it. If that feedback never arrives (lost packet,
      * server without the feature), integrate the motion packets we already send — byte 5 is
      * the mode, bytes 12..15 / 16..19 the big-endian x/y (MousePacket) — starting from the
-     * screen center, and reveal the overlay once motion has flowed for 400 ms. Runs on the
-     * main thread (TV touch, D-pad nudge) or via the phone pad's main-thread dispatch.
+     * screen center, and reveal the overlay once motion has flowed for
+     * [CURSOR_FALLBACK_DELAY_MS]. Runs on the main thread (TV touch, D-pad nudge) or via
+     * the phone pad's main-thread dispatch.
      */
     private fun onOutgoingMousePacket(packet: ByteArray) {
+        cursorOutPackets++
         if (cursorDsmcSeen || packet.size < MousePacket.SIZE) return
         if (mouseStatus != "live" || !mouseEnabledByUser) return
-        if (lastStreamWidth <= 0 || lastStreamHeight <= 0) return
         val mode = packet[5].toInt()
         val x = readBeInt(packet, 12)
         val y = readBeInt(packet, 16)
         if (mode == MousePacket.MODE_ABSOLUTE) {
+            // Absolute coordinates are self-contained (0..65535 normalized): they carry the
+            // position outright, so this path must not wait on stream dimensions that may
+            // never arrive before the first motion — that stall used to hide the cursor.
             virtualCursorX = x / 65535f
             virtualCursorY = y / 65535f
         } else {
+            if (lastStreamWidth <= 0 || lastStreamHeight <= 0) return
             // Relative deltas are host-pixel motion; the stream size stands in for the host
             // desktop (exact at native quality, approximate at 720p — insurance only).
             virtualCursorX = (virtualCursorX + x.toFloat() / lastStreamWidth).coerceIn(0f, 1f)
@@ -1249,6 +1261,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         cursorDsmcSeen = false
         virtualCursorX = 0.5f
         virtualCursorY = 0.5f
+        cursorOutPackets = 0
         val stoppedReceiver = mediaReceiver
         mediaReceiver = null
         stoppedReceiver?.stop()
@@ -1327,6 +1340,16 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
             append("\nPAD    $gamepadDetail")
             append("\nMOUSE  $mouseStatus · ${remoteMouse.currentMode().name.lowercase()}")
+            append("\nCURSOR out=$cursorOutPackets · dsmc=")
+            append(if (cursorDsmcSeen) "seen" else "none")
+            append(" · fallback=")
+            append(
+                when {
+                    cursorFallbackShown -> "shown"
+                    cursorFallbackJob != null -> "armed"
+                    else -> "idle"
+                }
+            )
             append("\nPHONE  ")
             val pad = phoneServer
             if (pad != null && pad.isRunning) {
@@ -1415,7 +1438,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         private const val TARGET_FPS = 60
         private const val MOUSE_HINT_VISIBLE_MS = 4500L
         // Insurance cursor: only claim the pointer is missing after motion actually flowed.
-        private const val CURSOR_FALLBACK_DELAY_MS = 400L
+        private const val CURSOR_FALLBACK_DELAY_MS = 150L
         private const val MOUSE_HINT_FADE_MS = 250L
         private const val MOUSE_TOOLBAR_EXPANDED_MS = 5000L
         private const val AUDIO_NEGOTIATION_TIMEOUT_MS = 3500L

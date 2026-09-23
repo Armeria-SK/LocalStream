@@ -192,7 +192,8 @@ public sealed class StreamSession : IDisposable
         PairingManager pairing,
         string serverName,
         IPAddress? clientAddress,
-        ServerOptions options)
+        ServerOptions options,
+        bool isController = false)
     {
         _send = send;
         _requestClose = requestClose;
@@ -200,7 +201,22 @@ public sealed class StreamSession : IDisposable
         _serverName = serverName;
         _clientAddress = clientAddress;
         _options = options;
+        IsController = isController;
     }
+
+    /// <summary>
+    /// True for a second-client connection that declared role=controller in HELLO
+    /// (PROTOCOL.md §2.1): it authenticates like any other client and injects input, but it
+    /// never owns the capture pipeline — START_STREAM from it is ignored at the root.
+    /// </summary>
+    public bool IsController { get; }
+
+    /// <summary>
+    /// Input is accepted while the pipeline streams (viewer sessions) or at any time after
+    /// auth on a controller session, which has no pipeline of its own. Every input handler
+    /// gates on this so the two roles cannot diverge.
+    /// </summary>
+    private bool InputAllowed => _streaming || IsController;
 
     private static long NowMs() => MonotonicClock.NowMs;
 
@@ -223,8 +239,10 @@ public sealed class StreamSession : IDisposable
             case "GAMEPAD_STOP": StopGamepads(); break;
             case "INPUT_START": OnInputStart(payload); break;
             case "MOUSE_BUTTON": OnMouseButton(payload); break;
+            case "MOUSE_MOTION": OnMouseMotionMessage(payload); break;
             case "MOUSE_RESET": _mouse?.Reset(); break;
             case "KEYBOARD_KEY": OnKeyboardKey(payload); break;
+            case "KEYBOARD_TEXT": OnKeyboardText(payload); break;
             case "KEYBOARD_RESET": _keyboard?.Reset(); break;
             case "INPUT_STOP": StopInput(); break;
             case "STOP_STREAM": OnStopStream(); break;
@@ -322,6 +340,12 @@ public sealed class StreamSession : IDisposable
 
     private void OnStartStream(ReadOnlySpan<byte> payload)
     {
+        // A controller-role connection (§2.1) has no capture pipeline: its session stays in
+        // Ready forever, and any START_STREAM it (or a buggy client) sends is ignored at the
+        // root so a second pipeline can never fight the viewer session for DXGI/audio.
+        if (IsController)
+            return;
+
         // Idempotent restart: the client may re-send START_STREAM (e.g. returning to the
         // foreground) without waiting for STREAM_STOPPED (PROTOCOL.md §5).
         if (_state == SessionState.Streaming)
@@ -556,7 +580,11 @@ public sealed class StreamSession : IDisposable
 
     private void OnInputStart(ReadOnlySpan<byte> payload)
     {
-        if (_state != SessionState.Streaming || !_streaming)
+        // Viewer sessions require the live pipeline exactly as before; a controller session
+        // (state stays Ready — it never streams) enables input on its own authority.
+        bool streamingSession = _state == SessionState.Streaming && _streaming;
+        bool controllerSession = IsController && _state == SessionState.Ready;
+        if (!streamingSession && !controllerSession)
             return;
 
         var request = Json.Deserialize<InputStartMessage>(payload);
@@ -582,8 +610,9 @@ public sealed class StreamSession : IDisposable
 
             // Capture-fault cleanup runs off the control thread. If it won the race after
             // the initial state check, discard anything this request just created rather
-            // than leaving an input manager alive after the stream ended.
-            if (_state != SessionState.Streaming || !_streaming)
+            // than leaving an input manager alive after the stream ended. Controller
+            // sessions have no pipeline to lose, so only the viewer path re-checks.
+            if (!IsController && (_state != SessionState.Streaming || !_streaming))
             {
                 StopInput();
                 return;
@@ -606,7 +635,7 @@ public sealed class StreamSession : IDisposable
 
     private void OnMouseButton(ReadOnlySpan<byte> payload)
     {
-        if (_state != SessionState.Streaming || !_streaming)
+        if (!InputAllowed)
             return;
         var mouse = Volatile.Read(ref _mouse);
         if (mouse == null)
@@ -627,7 +656,7 @@ public sealed class StreamSession : IDisposable
 
     private void OnKeyboardKey(ReadOnlySpan<byte> payload)
     {
-        if (_state != SessionState.Streaming || !_streaming)
+        if (!InputAllowed)
             return;
         var keyboard = Volatile.Read(ref _keyboard);
         if (keyboard == null)
@@ -638,6 +667,46 @@ public sealed class StreamSession : IDisposable
         try
         {
             keyboard.SetKey(message.Sequence, message.Usage, message.Down);
+        }
+        catch (Exception ex)
+        {
+            StopInput();
+            _send(OutgoingMessages.InputUnavailable(ex.Message));
+        }
+    }
+
+    /// <summary>Control-channel mouse motion (PROTOCOL.md §2.3): the controller-role path,
+    /// which never learned the media endpoint the UDP DSMI datagrams require. Same
+    /// managers, same sequence spaces, same guards as the UDP path via [OnMouseMotion].</summary>
+    private void OnMouseMotionMessage(ReadOnlySpan<byte> payload)
+    {
+        if (!InputAllowed)
+            return;
+        var message = Json.Deserialize<MouseMotionMessage>(payload);
+        if (message == null)
+            return;
+        if (message.Absolute && (message.X is < 0 or > 65535 || message.Y is < 0 or > 65535))
+            return;
+        OnMouseMotion(new MouseMotion(
+            message.Sequence, message.Absolute, message.X, message.Y,
+            message.HWheel, message.VWheel));
+    }
+
+    /// <summary>Unicode text burst (PROTOCOL.md §2.4) — phone-IME output with no HID usage
+    /// (kana, kanji, emoji), injected by the keyboard manager as KEYEVENTF_UNICODE.</summary>
+    private void OnKeyboardText(ReadOnlySpan<byte> payload)
+    {
+        if (!InputAllowed)
+            return;
+        var keyboard = Volatile.Read(ref _keyboard);
+        if (keyboard == null)
+            return;
+        var message = Json.Deserialize<KeyboardTextMessage>(payload);
+        if (message == null || string.IsNullOrEmpty(message.Text))
+            return;
+        try
+        {
+            keyboard.SetUnicode(message.Sequence, message.Text);
         }
         catch (Exception ex)
         {
@@ -866,7 +935,7 @@ public sealed class StreamSession : IDisposable
 
     private void OnMouseMotion(MouseMotion motion)
     {
-        if (!_streaming)
+        if (!InputAllowed)
             return;
         var mouse = Volatile.Read(ref _mouse);
         if (mouse == null)

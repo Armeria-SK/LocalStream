@@ -133,6 +133,26 @@ public sealed class KeyboardKeyMessage
     [JsonPropertyName("down")] public bool Down { get; set; }
 }
 
+/// <summary>Control-channel mouse motion (PROTOCOL.md §2.3): the controller-role path,
+/// which never learns the media endpoint the UDP DSMI datagrams would use.</summary>
+public sealed class MouseMotionMessage
+{
+    [JsonPropertyName("sequence")] public uint Sequence { get; set; }
+    [JsonPropertyName("absolute")] public bool Absolute { get; set; }
+    [JsonPropertyName("x")] public int X { get; set; }
+    [JsonPropertyName("y")] public int Y { get; set; }
+    [JsonPropertyName("hwheel")] public int HWheel { get; set; }
+    [JsonPropertyName("vwheel")] public int VWheel { get; set; }
+}
+
+/// <summary>Unicode text burst (PROTOCOL.md §2.4): one ordered transition covering the
+/// whole string, for IME output with no HID usage (kana, kanji, emoji).</summary>
+public sealed class KeyboardTextMessage
+{
+    [JsonPropertyName("sequence")] public uint Sequence { get; set; }
+    [JsonPropertyName("text")] public string Text { get; set; } = "";
+}
+
 /// <summary>
 /// Outgoing messages are built as plain anonymous objects at the call site so their member
 /// names map 1:1 to the wire spec. These small helpers keep the field names in one place.

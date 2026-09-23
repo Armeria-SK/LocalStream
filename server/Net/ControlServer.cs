@@ -10,12 +10,18 @@ namespace DeskStreamer.Server.Net;
 
 /// <summary>
 /// Control channel (PROTOCOL.md §2): TCP 47801, length-prefixed (uint32 BE) UTF-8 JSON.
-/// Handles framing, keepalive (PING/PONG + 6 s dead-connection timeout), and single-client
-/// enforcement. Protocol semantics live in <see cref="StreamSession"/>.
+/// Handles framing, keepalive (PING/PONG + 6 s dead-connection timeout), and the slot
+/// rules of §2.1: at most one viewer (screen output) session and one controller
+/// session at a time, decided from the role field of the first HELLO. Protocol
+/// semantics live in <see cref="StreamSession"/>.
 /// </summary>
 public sealed class ControlServer : IDisposable
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(6);
+
+    /// <summary>Hard cap on concurrent sockets (incl. ones that never send HELLO), so a
+    /// connect flood cannot pin a reader task per socket for the full idle timeout.</summary>
+    private const int MaxConnections = 8;
 
     private readonly PairingManager _pairing;
     private readonly string _serverName;
@@ -24,6 +30,8 @@ public sealed class ControlServer : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _acceptLoop;
     private int _busy;
+    private int _controllerBusy;
+    private int _connections;
     private StreamSession? _current;
 
     /// <summary>The active session, if any (read by the console stats printer and web dashboard).</summary>
@@ -57,26 +65,28 @@ public sealed class ControlServer : IDisposable
             catch (ObjectDisposedException) { break; }
             catch (SocketException) { continue; }
 
-            if (Interlocked.CompareExchange(ref _busy, 1, 0) == 1)
+            // Slot claiming and rejection moved into HandleClientAsync: the deciding frame
+            // (HELLO's role field, §2.1) only arrives once the socket is up, and a second
+            // client must receive a BUSY answer rather than a blind pre-HELLO drop.
+            if (Interlocked.Increment(ref _connections) > MaxConnections)
             {
-                // A client is already connected — reject the second per PROTOCOL.md.
-                _ = RejectAsync(tcp);
+                Interlocked.Decrement(ref _connections);
+                _ = RejectAsync(tcp, "too many concurrent connections");
                 continue;
             }
 
-            _ = HandleClientAsync(tcp, ct)
-                .ContinueWith(_ => Interlocked.Exchange(ref _busy, 0), TaskScheduler.Default);
+            _ = HandleClientAsync(tcp, ct);
         }
     }
 
-    private async Task RejectAsync(TcpClient tcp)
+    private async Task RejectAsync(TcpClient tcp, string message)
     {
         try
         {
             using (tcp)
             {
                 var stream = tcp.GetStream();
-                await WriteFrameAsync(stream, OutgoingMessages.Error("BUSY", "another client is connected"));
+                await WriteFrameAsync(stream, OutgoingMessages.Error("BUSY", message));
             }
         }
         catch { /* ignore */ }
@@ -100,36 +110,67 @@ public sealed class ControlServer : IDisposable
             }
         }
 
-        var clientAddress = (remote as IPEndPoint)?.Address;
-        var session = new StreamSession(
-            Send,
-            () => { try { tcp.Close(); } catch { } },
-            _pairing,
-            _serverName,
-            clientAddress,
-            _options);
-        Volatile.Write(ref _current, session);
-
+        bool claimedViewer = false;
+        bool claimedController = false;
+        StreamSession? session = null;
         try
         {
-            while (!ct.IsCancellationRequested)
-            {
-                byte[]? frame = await ReadFrameAsync(stream, ct);
-                if (frame == null)
-                    break; // clean close or timeout
+            // The role is declared in the first frame (HELLO's optional "role", §2.1).
+            // Deciding the slot here — after that frame instead of at accept time — is what
+            // lets a second device receive BUSY and then reconnect as the controller.
+            byte[]? first = await ReadFrameAsync(stream, ct);
+            if (first == null)
+                return; // peer closed, or idle-timeout before HELLO
 
+            bool isController = IsControllerHello(first);
+            if (isController)
+            {
+                if (Interlocked.CompareExchange(ref _controllerBusy, 1, 0) == 1)
+                {
+                    await WriteFrameAsync(stream, OutgoingMessages.Error("BUSY", "a controller is already connected"));
+                    return;
+                }
+                claimedController = true;
+            }
+            else
+            {
+                if (Interlocked.CompareExchange(ref _busy, 1, 0) == 1)
+                {
+                    // Screen output stays single-client; the Android app turns this code
+                    // into the role-selection dialog instead of a dead end (§2.1).
+                    await WriteFrameAsync(stream, OutgoingMessages.Error("BUSY", "screen output is already in use by another client"));
+                    return;
+                }
+                claimedViewer = true;
+            }
+
+            var clientAddress = (remote as IPEndPoint)?.Address;
+            var active = new StreamSession(
+                Send,
+                () => { try { tcp.Close(); } catch { } },
+                _pairing,
+                _serverName,
+                clientAddress,
+                _options,
+                isController);
+            session = active;
+            if (!isController)
+                Volatile.Write(ref _current, active);
+            string role = isController ? "controller" : "viewer";
+            Console.WriteLine($"[control] {role} session established for {remote}.");
+            AsyncLogger.Info($"[control] {role} session established for {remote}");
+
+            bool HandleFrame(byte[] frame)
+            {
                 // Drain any dashboard commands on this (control) thread before handling the
                 // frame, so session start/stop stays serialized with control-message handling.
                 // Bounded latency: the client PINGs every 2 s, so a queued command runs within
                 // one keepalive interval even on an otherwise idle control channel.
-                session.DrainCommands();
+                active.DrainCommands();
 
                 string? type = ReadType(frame);
                 if (type == null)
-                {
-                    // Malformed frame: either side closes the socket (PROTOCOL.md §2).
-                    break;
-                }
+                    return false; // Malformed frame: either side closes the socket (PROTOCOL.md §2).
 
                 if (type == "PING")
                 {
@@ -137,10 +178,23 @@ public sealed class ControlServer : IDisposable
                     long? t0Us = ReadOptionalInt64(frame, "t0Us");
                     Send(OutgoingMessages.Pong(t0Us, t0Us.HasValue ? t1Us : null,
                         t0Us.HasValue ? MonotonicClock.NowUs : null));
-                    continue;
+                    return true;
                 }
 
-                session.HandleMessage(type, frame);
+                active.HandleMessage(type, frame);
+                return true;
+            }
+
+            if (!HandleFrame(first))
+                return;
+
+            while (!ct.IsCancellationRequested)
+            {
+                byte[]? frame = await ReadFrameAsync(stream, ct);
+                if (frame == null)
+                    break; // clean close or timeout
+                if (!HandleFrame(frame))
+                    break;
             }
         }
         catch (Exception ex)
@@ -150,11 +204,43 @@ public sealed class ControlServer : IDisposable
         }
         finally
         {
-            Volatile.Write(ref _current, null);
-            session.Dispose();
+            if (claimedViewer)
+                Volatile.Write(ref _current, null);
+            session?.Dispose();
+            if (claimedViewer)
+                Interlocked.Exchange(ref _busy, 0);
+            if (claimedController)
+                Interlocked.Exchange(ref _controllerBusy, 0);
+            Interlocked.Decrement(ref _connections);
             try { tcp.Close(); } catch { }
             Console.WriteLine($"[control] client {remote} disconnected.");
             AsyncLogger.Info($"[control] Client {remote} disconnected");
+        }
+    }
+
+    // ---- First-frame role (PROTOCOL.md §2.1) ----------------------------------------------
+
+    /// <summary>True only when the first frame is a HELLO that explicitly declares
+    /// <c>role:"controller"</c>. Anything else — including every pre-v0.8 client that
+    /// omits the field — is a viewer, preserving old single-client behavior.</summary>
+    private static bool IsControllerHello(byte[] frame)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(frame);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("type", out var type) ||
+                type.ValueKind != JsonValueKind.String ||
+                !string.Equals(type.GetString(), "HELLO", StringComparison.Ordinal))
+                return false;
+            return root.TryGetProperty("role", out var role) &&
+                   role.ValueKind == JsonValueKind.String &&
+                   string.Equals(role.GetString(), "controller", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

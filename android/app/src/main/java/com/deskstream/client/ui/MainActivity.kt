@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
 
     private var pairDialog: AlertDialog? = null
     private var pairDialogPinField: TextInputEditText? = null
+    private var roleDialog: AlertDialog? = null
     private var connectingServerName: String = ""
 
     /** True from the moment the user initiates a connect until we've navigated away (or the
@@ -97,6 +98,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         discoveryClient.stop()
+        roleDialog?.dismiss()
+        roleDialog = null
+        dismissPairDialog()
     }
 
     private fun updateEmptyState() {
@@ -169,7 +173,14 @@ class MainActivity : AppCompatActivity() {
                 dismissPairDialog()
                 if (pendingConnect) {
                     pendingConnect = false
-                    startActivity(Intent(this, StreamActivity::class.java))
+                    // A controller-role connection lands on the touchpad&keyboard screen;
+                    // a viewer connection on the stream (§2.1).
+                    val target = if (ControlClient.isController) {
+                        ControllerActivity::class.java
+                    } else {
+                        StreamActivity::class.java
+                    }
+                    startActivity(Intent(this, target))
                 }
             }
         }
@@ -194,12 +205,27 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             is ServerMessage.Error -> {
-                pendingConnect = false
-                binding.btnConnect.isEnabled = true
-                binding.tvSubtitle.text = "Could not connect · tap a server to retry"
-                binding.progressDiscovering.visibility = View.GONE
-                dismissPairDialog()
-                Snackbar.make(binding.rootLayout, describeError(msg), Snackbar.LENGTH_LONG).show()
+                if (msg.code == "BUSY" && !ControlClient.isController) {
+                    // Screen output already taken (§2.1): offer the controller role instead
+                    // of a dead end. Minimal UI reset first so the dialog doesn't fight the
+                    // spinner; the server closes the socket right after BUSY, and the
+                    // trailing CONNECTION_LOST is swallowed while the dialog is up.
+                    pendingConnect = false
+                    binding.btnConnect.isEnabled = true
+                    binding.progressDiscovering.visibility = View.GONE
+                    dismissPairDialog()
+                    binding.tvSubtitle.text = "Screen in use · choose how to connect"
+                    showRoleDialog()
+                } else if (roleDialog?.isShowing == true) {
+                    // Trailing socket-close noise for the rejection the dialog handles.
+                } else {
+                    pendingConnect = false
+                    binding.btnConnect.isEnabled = true
+                    binding.tvSubtitle.text = "Could not connect · tap a server to retry"
+                    binding.progressDiscovering.visibility = View.GONE
+                    dismissPairDialog()
+                    Snackbar.make(binding.rootLayout, describeError(msg), Snackbar.LENGTH_LONG).show()
+                }
             }
             else -> {}
         }
@@ -209,7 +235,34 @@ class MainActivity : AppCompatActivity() {
         "CONNECT_FAILED" -> "Could not connect: ${msg.message.ifEmpty { "connection failed" }}"
         "CONNECTION_LOST" -> "Connection lost"
         "BAD_VERSION" -> "Server protocol mismatch: ${msg.message}"
+        "BUSY" -> msg.message.ifEmpty { "That connection role is already in use" }
         else -> msg.message.ifEmpty { "Connection error (${msg.code})" }
+    }
+
+    /** The second device met the busy screen-output slot (§2.1): offer the controller
+     * role. "Screen output" follows the agreed behavior — an explicit error, never taking
+     * the output over from the device that is already displaying. */
+    private fun showRoleDialog() {
+        if (roleDialog?.isShowing == true) return
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.role_dialog_title)
+            .setMessage(R.string.role_dialog_body)
+            .setPositiveButton(R.string.role_dialog_controller) { _, _ ->
+                pendingConnect = true
+                binding.tvSubtitle.text = "Connecting as touchpad & keyboard…"
+                ControlClient.connect(
+                    ControlClient.serverIp,
+                    ControlClient.serverPort,
+                    role = "controller"
+                )
+            }
+            .setNegativeButton(R.string.role_dialog_output) { _, _ ->
+                Snackbar.make(binding.rootLayout, R.string.role_output_busy, Snackbar.LENGTH_LONG).show()
+                binding.tvSubtitle.text = "Could not connect · tap a server to retry"
+            }
+            .setNeutralButton(R.string.pair_dialog_negative, null)
+            .show()
+        roleDialog = dialog
     }
 
     private fun showPairDialog() {

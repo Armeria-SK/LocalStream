@@ -65,8 +65,9 @@ object ControlClient {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeMutex = Mutex()
-    /** Mouse down/up ordering is observable state on the host. Independent launch calls can
-     * reach [writeMutex] out of order, so all mouse control frames use one FIFO writer. */
+    /** Mouse and keyboard transitions are observable state on the host, and independent
+     * launch calls can reach [writeMutex] out of order — so all ordered input frames
+     * (buttons, controller motion, key/text bursts) share one FIFO writer. */
     private val mouseControlFrames = Channel<String>(Channel.UNLIMITED)
 
     init {
@@ -107,8 +108,20 @@ object ControlClient {
         }
     }
 
-    /** Starts a fresh connection attempt, tearing down any previous one first. */
-    fun connect(ip: String, port: Int) {
+    /** Session role per §2.1: `"viewer"` (screen output, the default) or `"controller"`
+     * (touchpad & keyboard for a second device). Set by [connect] and carried into every
+     * HELLO of that connection's auto-reconnects; [disconnect] resets it so any later
+     * fresh attempt is a viewer again. @Volatile because [connect] (main thread) and the
+     * IO-side reconnect loop both touch it. */
+    @Volatile var role: String = "viewer"
+        private set
+    val isController: Boolean get() = role == "controller"
+
+    /** Starts a fresh connection attempt, tearing down any previous one first.
+     * [role] is the role declared in HELLO (§2.1); MainActivity passes `"controller"`
+     * when the user picks that role after a BUSY on the screen-output slot. */
+    fun connect(ip: String, port: Int, role: String = "viewer") {
+        this.role = role
         explicitlyDisconnected = false
         connectionJob?.cancel()
         stopPingAndWatchdog()
@@ -126,6 +139,7 @@ object ControlClient {
 
     fun disconnect() {
         explicitlyDisconnected = true
+        role = "viewer"
         connectionJob?.cancel()
         stopPingAndWatchdog()
         closeSocketQuietly()
@@ -135,7 +149,9 @@ object ControlClient {
 
     fun sendHello(token: String) {
         lastSentToken = token
-        scope.launch { writeFrame(ClientMessages.hello(prefs.clientId, prefs.clientName, token)) }
+        scope.launch {
+            writeFrame(ClientMessages.hello(prefs.clientId, prefs.clientName, token, role))
+        }
     }
 
     fun sendPairRequest() {
@@ -193,6 +209,45 @@ object ControlClient {
     fun sendMouseClick(firstSequence: Long, button: String) {
         mouseControlFrames.trySend(ClientMessages.mouseButton(firstSequence, button, true))
         mouseControlFrames.trySend(ClientMessages.mouseButton(firstSequence + 1, button, false))
+    }
+
+    /** Controller-role input negotiation (§2.1): mouse + keyboard in one INPUT_START.
+     * Idempotent server-side, so callers may resend on every READY (re)entry — which is
+     * what keeps input alive across a reconnect that created a brand-new server session. */
+    fun startMouseKeyboardInput() {
+        scope.launch { writeFrame(ClientMessages.startMouseKeyboardInput()) }
+    }
+
+    /** Controller-role motion (§2.3): queued on the same FIFO as button frames so motion
+     * and clicks keep one arrival order on the wire. */
+    fun sendMouseMotion(
+        sequence: Long,
+        absolute: Boolean,
+        x: Int,
+        y: Int,
+        hwheel: Int,
+        vwheel: Int
+    ) {
+        mouseControlFrames.trySend(
+            ClientMessages.mouseMotion(sequence, absolute, x, y, hwheel, vwheel)
+        )
+    }
+
+    /** One HID key transition (§2.4); [sequence] must strictly increase across every
+     * keyboard message of the connection (keys and text bursts share one stream). */
+    fun sendKeyboardKey(sequence: Long, usage: Int, down: Boolean) {
+        mouseControlFrames.trySend(ClientMessages.keyboardKey(sequence, usage, down))
+    }
+
+    /** Unicode text burst (§2.4) — phone-IME output with no HID key position. */
+    fun sendKeyboardText(sequence: Long, text: String) {
+        if (text.isEmpty()) return
+        mouseControlFrames.trySend(ClientMessages.keyboardText(sequence, text))
+    }
+
+    /** §2.4: MUST be sent when the keyboard capture is released (Activity pause). */
+    fun sendKeyboardReset() {
+        mouseControlFrames.trySend(ClientMessages.keyboardReset())
     }
 
     /** Client-side rate limit (300 ms) on top of the server's own rate limit, per §2.3. */

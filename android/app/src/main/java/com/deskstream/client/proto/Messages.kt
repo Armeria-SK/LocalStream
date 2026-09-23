@@ -16,13 +16,25 @@ const val PROTOCOL_VERSION = 1
 
 object ClientMessages {
 
-    fun hello(clientId: String, clientName: String, token: String): String =
+    /**
+     * [role] declares the session role per §2.1: `"viewer"` (default — screen output) or
+     * `"controller"` (touchpad & keyboard for a second device). Pre-v0.8 servers ignore
+     * the unknown field, which keeps a controller attempt on an old server behaving
+     * exactly like a viewer attempt (a plain BUSY).
+     */
+    fun hello(
+        clientId: String,
+        clientName: String,
+        token: String,
+        role: String = "viewer"
+    ): String =
         JSONObject().apply {
             put("type", "HELLO")
             put("ver", PROTOCOL_VERSION)
             put("clientId", clientId)
             put("clientName", clientName)
             put("token", token)
+            put("role", role)
         }.toString()
 
     fun pairRequest(): String =
@@ -88,6 +100,64 @@ object ClientMessages {
             put("type", "INPUT_START")
             put("mouse", true)
         }.toString()
+
+    /**
+     * Controller-role input negotiation (§2.1): unlike [startMouseInput] this enables the
+     * keyboard too, because a controller session never streams and therefore has no
+     * STREAM_STARTED to piggyback the usual input start on.
+     */
+    fun startMouseKeyboardInput(): String =
+        JSONObject().apply {
+            put("type", "INPUT_START")
+            put("mouse", true)
+            put("keyboard", true)
+        }.toString()
+
+    /**
+     * Control-channel mouse motion (§2.3): the JSON twin of the 28-byte DSMI datagram,
+     * for connections that never learned a media endpoint to send the UDP original on.
+     */
+    fun mouseMotion(
+        sequence: Long,
+        absolute: Boolean,
+        x: Int,
+        y: Int,
+        hwheel: Int,
+        vwheel: Int
+    ): String =
+        JSONObject().apply {
+            put("type", "MOUSE_MOTION")
+            put("sequence", sequence and 0xFFFFFFFFL)
+            put("absolute", absolute)
+            put("x", x)
+            put("y", y)
+            put("hwheel", hwheel)
+            put("vwheel", vwheel)
+        }.toString()
+
+    /** One ordered HID key transition (§2.4): `usage` is a USB HID Keyboard-page usage ID. */
+    fun keyboardKey(sequence: Long, usage: Int, down: Boolean): String =
+        JSONObject().apply {
+            put("type", "KEYBOARD_KEY")
+            put("sequence", sequence and 0xFFFFFFFFL)
+            put("usage", usage)
+            put("down", down)
+        }.toString()
+
+    /**
+     * Unicode text burst (§2.4): one ordered message covering the whole string, for IME
+     * output with no HID key position (kana, kanji, emoji). Shares [sequence] space with
+     * [keyboardKey] — the host keeps a single monotonic keyboard sequence.
+     */
+    fun keyboardText(sequence: Long, text: String): String =
+        JSONObject().apply {
+            put("type", "KEYBOARD_TEXT")
+            put("sequence", sequence and 0xFFFFFFFFL)
+            put("text", text)
+        }.toString()
+
+    fun keyboardReset(): String =
+        JSONObject().apply { put("type", "KEYBOARD_RESET") }.toString()
 
     fun stopInput(): String =
         JSONObject().apply { put("type", "INPUT_STOP") }.toString()

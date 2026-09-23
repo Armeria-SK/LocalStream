@@ -56,8 +56,11 @@ and video latency still needs validation against a Windows host.
 
 ```
 app/src/main/java/com/deskstream/client/
-  ui/MainActivity.kt      discovery + connect + pairing UI
+  ui/MainActivity.kt      discovery + connect + pairing UI, role dialog on BUSY (§2.1)
   ui/StreamActivity.kt    fullscreen video, aspect-ratio letterboxing, stats overlay
+  ui/ControllerActivity.kt
+                          second-device controller role: touchpad + text composer whose
+                          edits become PC-side keyboard input (§2.1)
   ui/ServerAdapter.kt     discovered-server list
   net/DiscoveryClient.kt  UDP broadcast DSPROBE1 / DSREPLY parsing (§1)
   net/ControlClient.kt    process-wide control channel singleton: length-prefixed JSON,
@@ -100,6 +103,9 @@ app/src/main/java/com/deskstream/client/
   pools, reorder state, codec input, and AudioTrack tuning remain bounded.
 - Pairing tokens are stored per server IP in SharedPreferences; a `PAIR_REQUIRED` in response
   to a non-empty token clears it and re-pairs automatically.
+- A second device connecting while the screen output is busy gets a role dialog: continue as
+  a touchpad & keyboard controller (own screen, phone keyboard types at the PC's focused
+  caret), or back out — the stream is never taken over (§2.1).
 - Audio is optional and backward-compatible. If an older server ignores `AUDIO_START`, the
   stream screen reports that no audio reply arrived while video continues normally.
 - Gamepad forwarding is also optional and requires ViGEmBus 1.22 on Windows. Connect the

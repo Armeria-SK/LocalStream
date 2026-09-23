@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Background tint states for the stream-toolbar buttons (Widget.DeskStream.ToolbarButton).
+  TextButton's default tint is effectively invisible on the dark toolbar pill, so a TV
+  remote's D-pad focus, selection and press had no visible marker at all. Focus/selection
+  now light the pill; press is a subtle white flash.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/accent_blue" android:state_focused="true" />
+    <item android:color="#663DDC84" android:state_selected="true" />
+    <item android:color="#40FFFFFF" android:state_pressed="true" />
+    <item android:color="@android:color/transparent" />
+</selector>

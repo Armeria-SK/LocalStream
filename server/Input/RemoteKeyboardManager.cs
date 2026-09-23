@@ -13,6 +13,7 @@ public sealed class RemoteKeyboardManager : IDisposable
     private const uint InputKeyboard = 1;
     private const uint KeyEventExtendedKey = 0x0001;
     private const uint KeyEventKeyUp = 0x0002;
+    private const uint KeyEventUnicode = 0x0004;
     private const uint KeyEventScanCode = 0x0008;
     private const ushort VkPause = 0x13;
     private const ushort VkVolumeMute = 0xAD;
@@ -70,6 +71,62 @@ public sealed class RemoteKeyboardManager : IDisposable
             else
                 _pressed.Remove(usage);
         }
+    }
+
+    /// <summary>
+    /// Injects a burst of Unicode text as KEYEVENTF_UNICODE down/up pairs, one per UTF-16
+    /// code unit. The single [sequence] covers the whole message so a controller client can
+    /// keep one ordered keyboard stream across HID key transitions (KEYBOARD_KEY) and IME
+    /// text with no HID usage: kana, kanji, emoji (PROTOCOL.md §2.4).
+    /// </summary>
+    public void SetUnicode(uint sequence, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+            if (_hasSequence && unchecked((int)(sequence - _lastSequence)) <= 0)
+                return;
+            _lastSequence = sequence;
+            _hasSequence = true;
+
+            if (_releasePending)
+            {
+                ReleasePressedKeys(retainFailures: true);
+                if (_releasePending)
+                    return;
+            }
+
+            Span<NativeInput> pair = stackalloc NativeInput[2];
+            foreach (char c in text)
+            {
+                pair[0] = UnicodeInput(c, down: true);
+                pair[1] = UnicodeInput(c, down: false);
+                Send(pair);
+            }
+        }
+    }
+
+    private static NativeInput UnicodeInput(char value, bool down)
+    {
+        uint flags = KeyEventUnicode;
+        if (!down)
+            flags |= KeyEventKeyUp;
+        return new NativeInput
+        {
+            Type = InputKeyboard,
+            Union = new InputUnion
+            {
+                Keyboard = new NativeKeyboardInput
+                {
+                    VirtualKey = 0,
+                    ScanCode = value,
+                    Flags = flags,
+                },
+            },
+        };
     }
 
     /// <summary>Best-effort release of every key currently held by the remote client.</summary>
