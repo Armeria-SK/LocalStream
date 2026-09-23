@@ -460,8 +460,11 @@ motion as the control-channel `MOUSE_MOTION` message (§2.3) instead of this dat
 sequence space, one server-side monotonicity check — only the framing differs.
 
 After applying a motion packet the server may return a 16-byte authoritative cursor packet
-on the media channel: ASCII `DSMC`, version byte `1`, three reserved zero bytes, a uint32
-sequence, then uint16 normalized primary-display X and Y. While streaming, the server also
+on the media channel: ASCII `DSMC`, version byte `1`, a flags byte, two reserved zero bytes,
+a uint32 sequence, then uint16 normalized primary-display X and Y. Flags bit 0 (`0x01`) means
+the host is not drawing its pointer (a fullscreen video or game hid it, or pen/touch input
+suppressed it); the client hides its overlay while it is set and shows it again on the next
+DSMC without it. Older servers always send `0` (visible) and older clients ignore the byte. While streaming, the server also
 polls the host pointer (~60 Hz) and sends DSMC whenever it moves — whatever moved it: a
 controller-role session, the PC's own mouse — plus a resend every 500 ms. The sequence is
 therefore the echoed motion sequence or an independent counter and carries no ordering

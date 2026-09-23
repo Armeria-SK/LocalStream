@@ -73,16 +73,37 @@ public sealed class RemoteMouseManager : IDisposable
     }
 
     /// <summary>Current host pointer normalized to 0..65535 on the primary display, the same
-    /// space as DSMC and absolute DSMI; null when Windows cannot report it.</summary>
+    /// space as DSMC and absolute DSMI, plus whether Windows is drawing it at all; null when
+    /// Windows cannot report a position.</summary>
+    /// <remarks>
+    /// GetCursorInfo is the system-wide pointer state (what screen recorders use). A fullscreen
+    /// YouTube/player hides the pointer either with ShowCursor(FALSE) — CURSOR_SHOWING clears —
+    /// or by setting a null cursor (CSS cursor:none) — hCursor becomes 0; both count as hidden.
+    /// CURSOR_SUPPRESSED (pen/touch input) also means nothing is drawn.
+    /// </remarks>
     public static CursorPosition? GetNormalizedCursorPosition()
     {
-        if (!GetCursorPos(out NativePoint point)) return null;
         int width = GetSystemMetrics(0);
         int height = GetSystemMetrics(1);
         if (width <= 1 || height <= 1) return null;
+
+        NativePoint point;
+        bool hidden = false;
+        var info = new NativeCursorInfo { Size = Marshal.SizeOf<NativeCursorInfo>() };
+        if (GetCursorInfo(ref info))
+        {
+            point = info.ScreenPosition;
+            hidden = (info.Flags & CursorShowing) == 0 ||
+                     (info.Flags & CursorSuppressed) != 0 ||
+                     info.Cursor == IntPtr.Zero;
+        }
+        else if (!GetCursorPos(out point))
+        {
+            return null;
+        }
         ushort x = (ushort)Math.Clamp((long)point.X * 65535 / (width - 1), 0, 65535);
         ushort y = (ushort)Math.Clamp((long)point.Y * 65535 / (height - 1), 0, 65535);
-        return new CursorPosition(x, y);
+        return new CursorPosition(x, y, hidden);
     }
 
     public void SetButton(uint sequence, string button, bool down)
@@ -253,6 +274,22 @@ public sealed class RemoteMouseManager : IDisposable
         public int X;
         public int Y;
     }
+
+    private const int CursorShowing = 0x00000001;
+    private const int CursorSuppressed = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeCursorInfo
+    {
+        public int Size;
+        public int Flags;
+        public IntPtr Cursor;
+        public NativePoint ScreenPosition;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorInfo(ref NativeCursorInfo info);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern unsafe uint SendInput(uint count, NativeInput* inputs, int size);
