@@ -10,17 +10,22 @@ public readonly record struct MouseMotion(
     int HorizontalWheel,
     int VerticalWheel);
 
-public readonly record struct CursorPosition(ushort X, ushort Y);
+/// <param name="Hidden">The host itself is not drawing a pointer (a fullscreen video or game
+/// hid it). Carried as DSMC flag bit 0 so the client hides its overlay too.</param>
+public readonly record struct CursorPosition(ushort X, ushort Y, bool Hidden = false);
 
 public static class CursorPacket
 {
     public const int Size = 16;
+    public const byte FlagHidden = 0x01;
 
     public static void Write(Span<byte> packet, uint sequence, CursorPosition position)
     {
         "DSMC"u8.CopyTo(packet);
         packet[4] = 1;
-        packet[5] = packet[6] = packet[7] = 0;
+        // Byte 5 = flags (bit 0: host pointer hidden). Pre-flag clients never read it.
+        packet[5] = position.Hidden ? CursorPacket.FlagHidden : (byte)0;
+        packet[6] = packet[7] = 0;
         BinaryPrimitives.WriteUInt32BigEndian(packet.Slice(8, 4), sequence);
         BinaryPrimitives.WriteUInt16BigEndian(packet.Slice(12, 2), position.X);
         BinaryPrimitives.WriteUInt16BigEndian(packet.Slice(14, 2), position.Y);

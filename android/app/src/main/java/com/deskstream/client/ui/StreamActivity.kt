@@ -834,6 +834,14 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         cursorDsmcSeen = true
         cursorFallbackJob?.cancel()
         cursorFallbackJob = null
+        if (position.hidden) {
+            // Mirror the host: a fullscreen player hid its pointer, so the overlay goes too.
+            // cursorDsmcSeen stays set, keeping the integrated fallback from redrawing it; the
+            // next DSMC without the flag (pointer moved/shown again) brings it straight back.
+            if (cursor.visibility == View.VISIBLE) lastCursorHide = "host-hidden"
+            cursor.visibility = View.GONE
+            return
+        }
         // The vector's top-left point is its hotspot, so no size-based centering offset is
         // needed. Use width/height - 1 to mirror the absolute-input normalization exactly.
         cursor.translationX = surface.x + position.x / 65535f * (surface.width - 1)
