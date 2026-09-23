@@ -316,15 +316,28 @@
     <!-- Remote-mouse cursor overlay: a sibling ABOVE overlayLayer on purpose. Clean-screen
          mode hides overlayLayer, but the D-pad pointer (which only exists in clean screen)
          still has to draw this cursor over the video; StreamActivity controls its visibility
-         via updateRemoteCursor. 16×24dp ≈ the size of a native 1080p PC cursor on a TV. -->
-    <ImageView
-        android:id="@+id/tvRemoteCursor"
-        android:layout_width="16dp"
-        android:layout_height="24dp"
-        android:contentDescription="@null"
-        android:importantForAccessibility="no"
-        android:scaleType="fitXY"
-        android:src="@drawable/ic_remote_cursor"
-        android:visibility="gone" />
+         via updateRemoteCursor. 16×24dp ≈ the size of a native 1080p PC cursor on a TV.
+
+         cursorLayer is full-screen and marked as drawing (setWillNotDraw(false) in
+         StreamActivity) so the window's SurfaceView transparent region never opens over the
+         video. That region is recomputed only on layout; the cursor moves by translation, so
+         with overlayLayer gone (clean screen) the frozen region used to swallow it. -->
+    <FrameLayout
+        android:id="@+id/cursorLayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no">
+
+        <ImageView
+            android:id="@+id/tvRemoteCursor"
+            android:layout_width="16dp"
+            android:layout_height="24dp"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ic_remote_cursor"
+            android:visibility="gone" />
+
+    </FrameLayout>
 
 </FrameLayout>
