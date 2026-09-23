@@ -79,6 +79,11 @@ class VideoDecoder(
     private var lastInputQueuedAtUs = 0L
     private var lastOutputAtUs = 0L
 
+    /** One-line summary of the active decoder for the stats overlay: codec name, whether the
+     * low-latency mode and SoC vendor keys were accepted. Written on the codec worker. */
+    @Volatile var diagnostics: String = "not started"
+        private set
+
     private val callback = object : MediaCodec.Callback() {
         override fun onInputBufferAvailable(mc: MediaCodec, index: Int) {
             if (mc !== codec) return
@@ -397,6 +402,7 @@ class VideoDecoder(
             val vendorKeys = vendorLowLatencyKeys(candidate.name)
 
             candidate.setCallback(callback, handler)
+            var tuned = true
             try {
                 candidate.configure(
                     buildFormat(config, tuned = true, lowLatency = lowLatency, vendorKeys = vendorKeys),
@@ -409,6 +415,7 @@ class VideoDecoder(
                 // a configuration it cannot guarantee. Fall back to the plain, previously
                 // shipped configuration rather than leaving the stream black.
                 Log.w(TAG, "decoder rejected low-latency tuning; retrying plain config", tunedError)
+                tuned = false
                 candidate.reset()
                 candidate.setCallback(callback, handler)
                 candidate.configure(
@@ -424,6 +431,19 @@ class VideoDecoder(
                 return false
             }
             codec = candidate
+            diagnostics = buildString {
+                append(candidate.name)
+                append(" · low-latency ").append(if (lowLatency) "on" else "unsupported")
+                append(" · vendor ")
+                append(
+                    when {
+                        vendorKeys.isEmpty() -> "none"
+                        tuned -> "on"
+                        else -> "rejected"
+                    }
+                )
+                append(" · priority ").append(if (tuned) "realtime" else "normal")
+            }
             codecStartedAtUs = nowUs()
             lastOutputAtUs = codecStartedAtUs
             try {
