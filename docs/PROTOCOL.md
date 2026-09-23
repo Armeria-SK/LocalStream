@@ -174,7 +174,8 @@ preference order: `"hevc"` (H.265 Main) and/or `"h264"`. Absent means `["h264"]`
 answers with the codec it actually encodes in `STREAM_STARTED.codec` — `"hevc"` only when the
 client offered it and the encoder supports it (NVENC; the Media Foundation fallback is H.264
 only), otherwise `"h264"`. Both are Annex-B with in-band parameter sets (VPS/SPS/PPS for HEVC)
-on every IDR, carried unchanged by §3. An operator can pin H.264 with `LOCALSTREAM_CODEC=h264`.
+on every IDR, carried unchanged by §3. Video is BT.709 **limited range** (16-235), signalled
+in the VUI; limited range is the one every client decode path renders correctly. An operator can pin H.264 with `LOCALSTREAM_CODEC=h264`.
 An Android client offers HEVC only when hardware HEVC decodes 1080p60 and every common
 stream size (720p, 1080p, 1440p, 3440x1440, 2160p) at 60 fps that hardware H.264 decodes.
 
@@ -225,8 +226,9 @@ client should stop vibration when both values are zero.
 `STATS` is sent every 1 s during streaming. `REQUEST_IDR` is sent whenever a frame is
 dropped as unrecoverable; server rate-limits IDR generation to at most one per 300 ms.
 On a `"refresh"` stream, an assembly gap after the first delivered keyframe sends
-`REQUEST_REFRESH` instead: the server starts one on-demand intra-refresh wave (about 1/6 s
-of frames, each carrying a slice of intra blocks; no IDR-sized burst, no post-IDR blur), at
+`REQUEST_REFRESH` instead: the server starts one on-demand intra-refresh wave (about 1/2 s
+of frames, each refreshing a band of the picture within a single slice; no IDR-sized burst,
+no post-IDR blur), at
 most one per 300 ms. `REQUEST_IDR` remains the repair for startup, decoder errors, decoder
 queue overflow and codec restarts, which all need a real keyframe.
 The extended assembly, decoder, FEC, packet, and latency members are optional and additive;
@@ -319,7 +321,9 @@ chunks; chunk `i` goes in the packet with `packetIndex = i`.
   window full and nothing complete, drop only the oldest incomplete frame), count the skipped
   frames as dropped in `STATS`, and send `REQUEST_REFRESH`. The decoder conceals the missing
   reference until the intra-refresh wave has swept the picture. Before the first keyframe and
-  for decoder-side drops the keyframe rule above still applies.
+  for decoder-side drops the keyframe rule above still applies. A client whose decoder stays
+  measurably slower after such a concealment (some TV decoders leave their low-latency output
+  mode until the next IDR) MAY send one `REQUEST_IDR` to reset it.
 - Never delay rendering by PTS. Release decoder output to the surface as soon as it is
   produced.
 
@@ -475,7 +479,7 @@ overlay; clients that do not recognize it ignore it.
 
 Inputs: `STATS` messages and IDR request rate.
 - The effective session ceiling is the smaller of `START_STREAM.maxBitrateKbps` and the
-  operator-configured server ceiling (30,000 kbps by default, never below 2,000 kbps;
+  operator-configured server ceiling (50,000 kbps by default, never below 2,000 kbps;
   `--max-bitrate-kbps` overrides).
 - **Down:** if a stats interval has at least 3 dropped frames or more than 3% loss,
   capture-to-receive p95 reaches 150 ms, transport p95 (capture-to-receive minus
