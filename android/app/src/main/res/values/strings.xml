@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DeskStream</string>
+    <string name="app_name">LocalStream</string>
     <string name="mouse_menu">Mouse</string>
     <string name="mouse_menu_show_description">Show mouse controls</string>
     <string name="mouse_menu_hide_description">Hide mouse controls</string>

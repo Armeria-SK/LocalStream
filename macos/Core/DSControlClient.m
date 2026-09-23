@@ -71,7 +71,7 @@ static NSError *DSControlPOSIXError(NSString *operation, int code) {
         _messageHandler = [messageHandler copy];
         _stateHandler = [stateHandler copy];
         _errorHandler = [errorHandler copy];
-        _ioQueue = dispatch_queue_create("com.deskstream.macos.control", DISPATCH_QUEUE_SERIAL);
+        _ioQueue = dispatch_queue_create("com.localstream.macos.control", DISPATCH_QUEUE_SERIAL);
         _receiveBuffer = [NSMutableData data];
         _fileDescriptor = -1;
         _state = DSControlStateDisconnected;

@@ -7,7 +7,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
-NSString * const DSNetworkErrorDomain = @"com.deskstream.macos.network";
+NSString * const DSNetworkErrorDomain = @"com.localstream.macos.network";
 
 static NSError *DSErrnoError(NSString *operation) {
     int code = errno;

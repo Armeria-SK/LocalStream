@@ -15,7 +15,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
 #---------------------------------------------------------------------------------
-TARGET		:=	DeskStream
+TARGET		:=	LocalStream
 SOURCES		:=	src
 INCLUDES	:=	src
 

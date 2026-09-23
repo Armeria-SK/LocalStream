@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Protocol;
 
-namespace DeskStreamer.Server.Net;
+namespace LocalStream.Server.Net;
 
 /// <summary>
 /// Dedicated UDP audio transport (PROTOCOL.md §3A). Captured PCM is grouped into fixed

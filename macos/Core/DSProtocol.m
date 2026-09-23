@@ -2,7 +2,7 @@
 
 #import <libkern/OSByteOrder.h>
 
-NSString * const DSProtocolErrorDomain = @"com.deskstream.macos.protocol";
+NSString * const DSProtocolErrorDomain = @"com.localstream.macos.protocol";
 
 uint16_t DSReadUInt16BigEndian(const uint8_t *bytes) {
     uint16_t value;

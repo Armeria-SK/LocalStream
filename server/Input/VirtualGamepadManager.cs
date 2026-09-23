@@ -1,9 +1,9 @@
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Protocol;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
 using Nefarius.ViGEm.Client.Targets.Xbox360;
 
-namespace DeskStreamer.Server.Input;
+namespace LocalStream.Server.Input;
 
 /// <summary>
 /// Owns up to four ViGEm-backed virtual Xbox 360 controllers. The lock coordinates the

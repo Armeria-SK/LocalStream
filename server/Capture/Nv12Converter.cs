@@ -1,7 +1,7 @@
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 
-namespace DeskStreamer.Server.Capture;
+namespace LocalStream.Server.Capture;
 
 /// <summary>
 /// GPU BGRA -> NV12 conversion via the D3D11 VideoProcessor. Runs entirely on the shared

@@ -52,7 +52,7 @@ static const void *DSGamepadQueueKey = &DSGamepadQueueKey;
     if (self) {
         _sendDatagram = [sendDatagram copy];
         _sendControl = [sendControl copy];
-        _queue = dispatch_queue_create("com.deskstream.macos.gamepad", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("com.localstream.macos.gamepad", DISPATCH_QUEUE_SERIAL);
         dispatch_queue_set_specific(_queue, DSGamepadQueueKey, (void *)DSGamepadQueueKey, NULL);
         _controllers = @[];
         _lastStates = [NSMutableArray array];

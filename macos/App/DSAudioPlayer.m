@@ -39,7 +39,7 @@ static const void *DSAudioQueueKey = &DSAudioQueueKey;
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _queue = dispatch_queue_create("com.deskstream.macos.audio", DISPATCH_QUEUE_SERIAL);
+        _queue = dispatch_queue_create("com.localstream.macos.audio", DISPATCH_QUEUE_SERIAL);
         dispatch_queue_set_specific(_queue, DSAudioQueueKey, (void *)DSAudioQueueKey, NULL);
         _freeBuffers = [NSMutableArray array];
     }
@@ -55,7 +55,7 @@ static const void *DSAudioQueueKey = &DSAudioQueueKey;
               packetSamples:(NSUInteger)packetSamples
                       error:(NSError **)error {
     if (sampleRate <= 0 || channels != 2 || packetSamples == 0) {
-        if (error) *error = [NSError errorWithDomain:@"DeskStreamAudio" code:1
+        if (error) *error = [NSError errorWithDomain:@"LocalStreamAudio" code:1
                                             userInfo:@{NSLocalizedDescriptionKey: @"Unsupported audio format"}];
         return NO;
     }
@@ -71,7 +71,7 @@ static const void *DSAudioQueueKey = &DSAudioQueueKey;
                         channels:(AVAudioChannelCount)channels
                      interleaved:YES];
         if (!format) {
-            startError = [NSError errorWithDomain:@"DeskStreamAudio" code:2
+            startError = [NSError errorWithDomain:@"LocalStreamAudio" code:2
                 userInfo:@{NSLocalizedDescriptionKey: @"Could not create the PCM output format"}];
             return;
         }
@@ -108,7 +108,7 @@ static const void *DSAudioQueueKey = &DSAudioQueueKey;
             if (buffer) [self.freeBuffers addObject:buffer];
         }
         if (self.freeBuffers.count == 0) {
-            startError = [NSError errorWithDomain:@"DeskStreamAudio" code:3
+            startError = [NSError errorWithDomain:@"LocalStreamAudio" code:3
                 userInfo:@{NSLocalizedDescriptionKey: @"Could not allocate audio buffers"}];
             [self stopOnQueue];
             return;

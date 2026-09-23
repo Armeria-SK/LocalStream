@@ -1,6 +1,6 @@
-# DeskStream — Android client
+# LocalStream — Android client
 
-Kotlin client for the DeskStream low-latency LAN screen streamer. Implements the wire
+Kotlin client for the LocalStream low-latency LAN screen streamer. Implements the wire
 contract in [`../docs/PROTOCOL.md`](../docs/PROTOCOL.md) (normative); design rationale in
 [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
@@ -55,7 +55,7 @@ and video latency still needs validation against a Windows host.
 ## Code map
 
 ```
-app/src/main/java/com/deskstream/client/
+app/src/main/java/com/localstream/client/
   ui/MainActivity.kt      discovery + connect + pairing UI, role dialog on BUSY (§2.1)
   ui/StreamActivity.kt    fullscreen video, aspect-ratio letterboxing, stats overlay
   ui/ControllerActivity.kt

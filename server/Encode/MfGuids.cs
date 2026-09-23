@@ -1,4 +1,4 @@
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>
 /// Media Foundation / CODECAPI GUIDs used by the encoder. Declared explicitly (rather than

@@ -107,8 +107,8 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
         DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
     dispatch_queue_attr_t audioAttributes = dispatch_queue_attr_make_with_qos_class(
         DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
-    self.mediaQueue = dispatch_queue_create("com.deskstream.macos.media", mediaAttributes);
-    self.audioQueue = dispatch_queue_create("com.deskstream.macos.audio-network", audioAttributes);
+    self.mediaQueue = dispatch_queue_create("com.localstream.macos.media", mediaAttributes);
+    self.audioQueue = dispatch_queue_create("com.localstream.macos.audio-network", audioAttributes);
     self.audioPlayer = [[DSAudioPlayer alloc] init];
     NSString *storedQuality = [NSUserDefaults.standardUserDefaults stringForKey:DSQualityDefaultsKey];
     _quality = [storedQuality isEqualToString:@"720p"] ? @"720p" : @"native";
@@ -148,7 +148,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
 #pragma mark - Menu bar
 
 - (void)buildMainMenu {
-    NSString *appName = NSRunningApplication.currentApplication.localizedName ?: @"DeskStream";
+    NSString *appName = NSRunningApplication.currentApplication.localizedName ?: @"LocalStream";
     NSMenu *mainMenu = [[NSMenu alloc] init];
 
     NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
@@ -244,7 +244,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                             NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                     backing:NSBackingStoreBuffered defer:NO];
-    self.window.title = @"DeskStream";
+    self.window.title = @"LocalStream";
     self.window.delegate = self;
     self.window.minSize = NSMakeSize(900, 540);
     [self.window center];
@@ -254,7 +254,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
     self.rootView.layer.backgroundColor = NSColor.windowBackgroundColor.CGColor;
     self.window.contentView = self.rootView;
 
-    NSTextField *title = [self label:@"DeskStream" size:30];
+    NSTextField *title = [self label:@"LocalStream" size:30];
     title.font = [NSFont systemFontOfSize:30 weight:NSFontWeightSemibold];
     NSTextField *subtitle = [self label:@"Low-latency Windows streaming on this LAN" size:14];
     subtitle.textColor = NSColor.secondaryLabelColor;
@@ -277,7 +277,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
     actions.spacing = 10;
     actions.distribution = NSStackViewDistributionFillEqually;
 
-    self.connectionStatus = [self label:@"Searching for DeskStream servers…" size:13];
+    self.connectionStatus = [self label:@"Searching for LocalStream servers…" size:13];
     self.connectionStatus.textColor = NSColor.secondaryLabelColor;
     self.connectionStatus.maximumNumberOfLines = 3;
 
@@ -511,7 +511,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
         if (self.servers.count == 1 && self.hostField.stringValue.length == 0)
             [self.serverPopup selectItemAtIndex:1];
     }
-    self.connectionStatus.stringValue = [NSString stringWithFormat:@"Found %lu DeskStream server%@ on this LAN",
+    self.connectionStatus.stringValue = [NSString stringWithFormat:@"Found %lu LocalStream server%@ on this LAN",
         self.servers.count, self.servers.count == 1 ? @"" : @"s"];
 }
 
@@ -1071,7 +1071,7 @@ static NSString * const DSQualityDefaultsKey = @"DSQuality";
 }
 
 - (void)writeScreenshotImage:(CGImageRef)image {
-    NSString *filename = [NSString stringWithFormat:@"DeskStream-%@.png", [self screenshotTimestampString]];
+    NSString *filename = [NSString stringWithFormat:@"LocalStream-%@.png", [self screenshotTimestampString]];
     NSFileManager *fileManager = NSFileManager.defaultManager;
     NSURL *picturesURL = [fileManager URLForDirectory:NSPicturesDirectory inDomain:NSUserDomainMask
                                      appropriateForURL:nil create:YES error:nil];

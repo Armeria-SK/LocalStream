@@ -4,7 +4,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 
-namespace DeskStreamer.Server.Capture;
+namespace LocalStream.Server.Capture;
 
 /// <summary>
 /// DXGI Desktop Duplication on the primary output (ARCHITECTURE.md latency pipeline).

@@ -1,4 +1,4 @@
-# DeskStream — Architecture
+# LocalStream — Architecture
 
 A Windows → Android/macOS LAN screen streamer engineered for minimal glass-to-glass latency
 (target: <50 ms median at 1080p60 on 5 GHz WiFi), designed around the documented failure

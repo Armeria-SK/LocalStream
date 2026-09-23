@@ -1,4 +1,4 @@
-# DeskStream Protocol v1 — NORMATIVE
+# LocalStream Protocol v1 — NORMATIVE
 
 Both the Windows server and the Android client implement exactly this. All multi-byte
 integers are **big-endian**. All JSON is UTF-8. Protocol version is `1`.
@@ -174,7 +174,7 @@ preference order: `"hevc"` (H.265 Main) and/or `"h264"`. Absent means `["h264"]`
 answers with the codec it actually encodes in `STREAM_STARTED.codec` — `"hevc"` only when the
 client offered it and the encoder supports it (NVENC; the Media Foundation fallback is H.264
 only), otherwise `"h264"`. Both are Annex-B with in-band parameter sets (VPS/SPS/PPS for HEVC)
-on every IDR, carried unchanged by §3. An operator can pin H.264 with `DESKSTREAM_CODEC=h264`.
+on every IDR, carried unchanged by §3. An operator can pin H.264 with `LOCALSTREAM_CODEC=h264`.
 An Android client offers HEVC only when hardware HEVC decodes 1080p60 and every common
 stream size (720p, 1080p, 1440p, 3440x1440, 2160p) at 60 fps that hardware H.264 decodes.
 

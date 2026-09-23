@@ -1,6 +1,6 @@
-# DeskStream macOS client
+# LocalStream macOS client
 
-Native Apple-silicon DeskStream client for macOS 13 and newer. It uses only system
+Native Apple-silicon LocalStream client for macOS 13 and newer. It uses only system
 frameworks and builds with Apple's Command Line Tools; full Xcode is not required for a
 local ad-hoc-signed app.
 
@@ -31,7 +31,7 @@ local ad-hoc-signed app.
 ```bash
 make test
 make app
-open build/DeskStream.app
+open build/LocalStream.app
 ```
 
 The default target is a thin `arm64` binary with a macOS 13 deployment target. `make app`

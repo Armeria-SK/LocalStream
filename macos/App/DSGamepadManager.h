@@ -5,7 +5,7 @@ NS_ASSUME_NONNULL_BEGIN
 typedef void (^DSGamepadDatagramBlock)(NSData *datagram);
 typedef void (^DSGamepadControlBlock)(NSDictionary<NSString *, id> *message);
 
-/// Maps up to four GameController.framework devices to DeskStream/XInput snapshots.
+/// Maps up to four GameController.framework devices to LocalStream/XInput snapshots.
 @interface DSGamepadManager : NSObject
 
 @property (atomic, getter=isEnabled) BOOL enabled;

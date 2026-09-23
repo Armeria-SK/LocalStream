@@ -1,6 +1,6 @@
 using Vortice.Direct3D11;
 
-namespace DeskStreamer.Server.Encode;
+namespace LocalStream.Server.Encode;
 
 /// <summary>Common surface-to-bitstream contract for native and Media Foundation encoders.</summary>
 public interface IVideoEncoder : IDisposable

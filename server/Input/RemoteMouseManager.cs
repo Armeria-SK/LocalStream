@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Protocol;
 
-namespace DeskStreamer.Server.Input;
+namespace LocalStream.Server.Input;
 
 /// <summary>
 /// Injects mouse input into the interactive Windows desktop. Motion is newest-wins UDP;

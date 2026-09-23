@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DeskStream"
+rootProject.name = "LocalStream"
 include(":app")

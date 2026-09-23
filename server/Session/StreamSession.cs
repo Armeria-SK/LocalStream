@@ -1,16 +1,16 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using DeskStreamer.Server.Audio;
-using DeskStreamer.Server.Capture;
-using DeskStreamer.Server.Encode;
-using DeskStreamer.Server.Input;
-using DeskStreamer.Server.Logging;
-using DeskStreamer.Server.Net;
-using DeskStreamer.Server.Protocol;
+using LocalStream.Server.Audio;
+using LocalStream.Server.Capture;
+using LocalStream.Server.Encode;
+using LocalStream.Server.Input;
+using LocalStream.Server.Logging;
+using LocalStream.Server.Net;
+using LocalStream.Server.Protocol;
 using Vortice.Direct3D11;
 
-namespace DeskStreamer.Server.Session;
+namespace LocalStream.Server.Session;
 
 public enum SessionState
 {
@@ -384,7 +384,7 @@ public sealed class StreamSession : IDisposable
         AsyncLogger.Info(
             $"[session] Client offered codecs [{string.Join(",", msg?.Codecs ?? Array.Empty<string>())}], " +
             $"recovery [{string.Join(",", msg?.Recovery ?? Array.Empty<string>())}]" +
-            (HevcDisabledByOperator() ? " (HEVC pinned off by DESKSTREAM_CODEC=h264)" : ""));
+            (HevcDisabledByOperator() ? " (HEVC pinned off by LOCALSTREAM_CODEC=h264)" : ""));
 
         BeginStream();
     }
@@ -1164,10 +1164,10 @@ public sealed class StreamSession : IDisposable
         }
     }
 
-    /// <summary>DESKSTREAM_CODEC=h264 pins H.264 even for HEVC-capable clients (debugging,
+    /// <summary>LOCALSTREAM_CODEC=h264 pins H.264 even for HEVC-capable clients (debugging,
     /// or a TV whose HEVC decoder misbehaves).</summary>
     private static bool HevcDisabledByOperator() =>
-        string.Equals(Environment.GetEnvironmentVariable("DESKSTREAM_CODEC")?.Trim(), "h264",
+        string.Equals(ServerOptions.GetEnv("CODEC")?.Trim(), "h264",
             StringComparison.OrdinalIgnoreCase);
 
     private void OnStats(ReadOnlySpan<byte> payload)
@@ -1430,7 +1430,7 @@ public sealed class StreamSession : IDisposable
     {
         Console.WriteLine();
         Console.WriteLine("  +--------------------------------------+");
-        Console.WriteLine("  |  DeskStream pairing                  |");
+        Console.WriteLine("  |  LocalStream pairing                  |");
         Console.WriteLine($"  |  Enter this PIN on your phone:  {pin} |");
         Console.WriteLine("  |  (valid for 60 seconds)              |");
         Console.WriteLine("  +--------------------------------------+");
@@ -1443,10 +1443,10 @@ public sealed class StreamSession : IDisposable
         if (type.Contains("BusNotFound", StringComparison.OrdinalIgnoreCase) ||
             type.Contains("DllNotFound", StringComparison.OrdinalIgnoreCase))
         {
-            return "ViGEmBus is not installed. Install the official ViGEmBus 1.22 driver, then restart DeskStream.";
+            return "ViGEmBus is not installed. Install the official ViGEmBus 1.22 driver, then restart LocalStream.";
         }
         if (type.Contains("BusVersionMismatch", StringComparison.OrdinalIgnoreCase))
-            return "The installed ViGEmBus driver is incompatible. Install ViGEmBus 1.22 and restart DeskStream.";
+            return "The installed ViGEmBus driver is incompatible. Install ViGEmBus 1.22 and restart LocalStream.";
         return string.IsNullOrWhiteSpace(ex.Message)
             ? "The Windows virtual Xbox controller could not be created."
             : ex.Message;

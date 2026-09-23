@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace DeskStreamer.Server.Protocol;
+namespace LocalStream.Server.Protocol;
 
 public readonly record struct MouseMotion(
     uint Sequence,

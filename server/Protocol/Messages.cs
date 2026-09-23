@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
 
-namespace DeskStreamer.Server.Protocol;
+namespace LocalStream.Server.Protocol;
 
 /// <summary>Fixed ports from PROTOCOL.md. Media port is negotiated (preferred 47802).</summary>
 public static class Ports

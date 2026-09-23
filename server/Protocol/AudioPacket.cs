@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace DeskStreamer.Server.Protocol;
+namespace LocalStream.Server.Protocol;
 
 /// <summary>
 /// Fixed low-latency audio datagram defined by PROTOCOL.md §3A. Header fields are

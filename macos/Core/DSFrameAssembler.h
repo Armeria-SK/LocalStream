@@ -9,7 +9,7 @@ typedef void (^DSFrameOutputHandler)(NSData *accessUnit,
                                      uint16_t pipelineDelayMilliseconds);
 typedef void (^DSFrameDropHandler)(void);
 
-/// DeskStream v1 frame reassembly and XOR-FEC recovery.
+/// LocalStream v1 frame reassembly and XOR-FEC recovery.
 ///
 /// The assembler intentionally holds no more than four incomplete frames. This is Wi-Fi packet
 /// reordering state, not a render queue; completed frames are emitted immediately. Any reference gap
