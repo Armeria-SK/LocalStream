@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Discovery screen -->
+    <string name="main_tagline">同じネットワーク内のPCを見つけて\n接続しましょう</string>
+    <string name="status_searching_title">PCを検索中…</string>
+    <string name="status_searching_body">同じネットワーク上のWindows PCを自動で探しています。</string>
+    <string name="status_connecting_title">接続中…</string>
+    <string name="status_connecting_body">%1$s（%2$s）に接続しています…</string>
+    <string name="status_reconnecting_body">接続が中断されました。再試行しています…</string>
+    <string name="status_controller_body">タッチパッド＆キーボードとして接続しています…</string>
+    <string name="status_pairing_title">ペアリング待ち</string>
+    <string name="status_pairing_body">PCに表示されたPINを入力してください。</string>
+    <string name="status_busy_title">画面出力は使用中です</string>
+    <string name="status_busy_body">この端末の接続方法を選んでください。</string>
+    <string name="status_failed_title">接続できませんでした</string>
+    <string name="status_failed_body">PCをタップしてもう一度お試しください。</string>
+    <string name="found_header">見つかったPC</string>
+    <string name="action_refresh">更新</string>
+    <string name="found_empty">まだPCが見つかっていません</string>
+    <string name="not_found_header">見つからない場合</string>
+    <string name="not_found_tips">• 下のボタンから手動でIPアドレスを入力する\n• PCアプリが起動していて、同じネットワークに接続されているか確認する</string>
+    <string name="paired_badge">ペアリング済み</string>
+    <string name="manual_connect_action">手動でIP接続</string>
+    <string name="manual_dialog_body">接続するPCのIPアドレスを入力してください。</string>
+    <string name="manual_dialog_hint">IPアドレス</string>
+    <string name="manual_dialog_helper">例：192.168.1.12</string>
+    <string name="manual_dialog_error_empty">IPアドレスを入力してください</string>
+    <string name="action_connect">接続する</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_ok">OK</string>
+
+    <!-- First-time pairing screen -->
+    <string name="pair_title">初回ペアリング</string>
+    <string name="pair_lead">PC側に表示される6桁のPINを入力して、初回ペアリングを行います。</string>
+    <string name="pair_instruction">PC側の画面に表示されている6桁のPINを入力してください。</string>
+    <string name="pair_note">PINの有効期限は60秒です（入力は3回まで）。</string>
+    <string name="pair_error_length">6桁すべて入力してください</string>
+    <string name="pair_error_wrong">PINが違います。あと%1$d回入力できます。</string>
+    <string name="pair_verifying">PINを確認しています…</string>
+    <string name="pair_requesting">新しいPINを取得しています…</string>
+    <string name="pair_new_pin">新しいPINをPCに表示しました。</string>
+    <string name="pair_request_pin">PINを再取得する</string>
+    <string name="pair_help_title">ペアリングについて</string>
+    <string name="pair_help_body">PINはPCで動作しているLocalStreamサーバーのウィンドウに表示されます。\n\n• 有効期限は60秒です。期限が切れたら「PINを再取得する」をタップしてください。\n• 3回間違えると接続が切断されます。\n• ペアリングは最初の1回だけです。次回からはPCを選ぶだけで接続できます。</string>
+    <string name="cd_back">戻る</string>
+    <string name="cd_help">ヘルプ</string>
+    <string name="cd_pin_field">6桁のPIN</string>
+
+    <!-- Connection errors -->
+    <string name="error_connect_failed">接続できませんでした：%1$s</string>
+    <string name="error_connect_failed_default">接続に失敗しました</string>
+    <string name="error_connection_lost">接続が切断されました</string>
+    <string name="error_bad_version">PCアプリとバージョンが一致しません：%1$s</string>
+    <string name="error_busy_default">その接続方法はすでに使用されています</string>
+    <string name="error_pair_timeout">PINの有効期限が切れました。もう一度接続してください。</string>
+    <string name="error_pair_failed">PINを3回間違えました。もう一度接続してください。</string>
+    <string name="error_generic">接続エラー（%1$s）</string>
+
+    <!-- Role selection when a second device finds the screen output busy -->
+    <string name="role_dialog_title">画面出力は使用中です</string>
+    <string name="role_dialog_body">別の端末がすでに画面を表示しています。この端末をタッチパッド＆キーボードとして接続するか、PC一覧に戻ってください。</string>
+    <string name="role_dialog_controller">タッチパッド＆キーボード</string>
+    <string name="role_dialog_output">画面出力</string>
+    <string name="role_output_busy">画面出力はすでに別の端末で使用されています</string>
+</resources>

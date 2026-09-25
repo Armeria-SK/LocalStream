@@ -18,6 +18,21 @@
     <color name="status_red">#FFFF5A5F</color>
 
     <color name="chip_bg_translucent">#99000000</color>
-    <color name="badge_paired_bg">#332ECC71</color>
-    <color name="badge_paired_text">#FF2ECC71</color>
+
+    <!-- Light palette for the discovery and pairing screens. -->
+    <color name="ls_bg">#FFFFFFFF</color>
+    <color name="ls_surface">#FFF3F6FA</color>
+    <color name="ls_surface_icon">#FFE3ECF8</color>
+    <color name="ls_stroke">#FFE1E7EF</color>
+    <color name="ls_stroke_strong">#FFCBD5E1</color>
+    <color name="ls_text_primary">#FF16202E</color>
+    <color name="ls_text_secondary">#FF5F6B7C</color>
+    <color name="ls_text_tertiary">#FF8C96A5</color>
+    <color name="ls_blue">#FF1A73E8</color>
+    <color name="ls_blue_dark">#FF1558C0</color>
+    <color name="ls_teal">#FF1FCFB0</color>
+    <color name="ls_error">#FFD93025</color>
+    <color name="ls_error_bg">#FFFDF1F0</color>
+    <color name="ls_paired_bg">#FFE3F5EA</color>
+    <color name="ls_paired_text">#FF16803C</color>
 </resources>

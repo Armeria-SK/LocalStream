@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Indeterminate search ring cycles through the two logo colors. -->
+    <integer-array name="ls_progress_colors">
+        <item>@color/ls_blue</item>
+        <item>@color/ls_teal</item>
+    </integer-array>
+</resources>
