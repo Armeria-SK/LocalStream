@@ -114,8 +114,6 @@ public sealed class MediaSender : IDisposable
         _lastRefillTs = afterSleep;
     }
 
-    /// <summary>Validated gamepad snapshots from the currently learned media endpoint.</summary>
-    public Action<GamepadState>? OnGamepadState { get; set; }
     public Action<MouseMotion>? OnMouseMotion { get; set; }
     /// <summary>Raised once when a fresh client media endpoint is learned from DSMH.</summary>
     public Action? OnClientConnected { get; set; }
@@ -206,11 +204,6 @@ public sealed class MediaSender : IDisposable
                 {
                     // The server sends all media to the source of the most recent DSMH.
                     SetClientEndpoint(r.RemoteEndPoint);
-                }
-                else if (_clientEndpoint?.Equals(r.RemoteEndPoint) == true &&
-                         GamepadPacket.TryParse(buf.AsSpan(0, r.ReceivedBytes), out var state))
-                {
-                    OnGamepadState?.Invoke(state);
                 }
                 else if (_clientEndpoint?.Equals(r.RemoteEndPoint) == true &&
                          MousePacket.TryParse(buf.AsSpan(0, r.ReceivedBytes), out var motion))

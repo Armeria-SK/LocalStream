@@ -54,7 +54,6 @@ public sealed class StreamSession : IDisposable
     private MediaSender? _sender;
     private AudioSender? _audioSender;
     private SystemAudioCapture? _audioCapture;
-    private VirtualGamepadManager? _gamepads;
     private RemoteMouseManager? _mouse;
     private RemoteKeyboardManager? _keyboard;
     private DesktopDuplicator? _duplicator;
@@ -138,7 +137,6 @@ public sealed class StreamSession : IDisposable
     public SessionState State => _state;
     public bool Streaming => _streaming;
     public bool AudioStreaming => _audioStreaming;
-    public int GamepadCount => _gamepads?.Count ?? 0;
     public int Fps { get; private set; } = 60;
     public int CurrentBitrateKbps => _currentBitrateKbps;
     public int BitrateCeilingKbps => _bitrateCeilingKbps;
@@ -235,8 +233,6 @@ public sealed class StreamSession : IDisposable
             case "MEDIA_READY": OnMediaReady(payload); break;
             case "AUDIO_START": OnAudioStart(); break;
             case "AUDIO_READY": OnAudioReady(payload); break;
-            case "GAMEPAD_START": OnGamepadStart(payload); break;
-            case "GAMEPAD_STOP": StopGamepads(); break;
             case "INPUT_START": OnInputStart(payload); break;
             case "MOUSE_BUTTON": OnMouseButton(payload); break;
             case "MOUSE_MOTION": OnMouseMotionMessage(payload); break;
@@ -494,37 +490,6 @@ public sealed class StreamSession : IDisposable
             Console.Error.WriteLine("[audio] ignored invalid AUDIO_READY endpoint.");
     }
 
-    private void OnGamepadStart(ReadOnlySpan<byte> payload)
-    {
-        if (_state != SessionState.Streaming || !_streaming)
-            return;
-
-        var message = Json.Deserialize<GamepadStartMessage>(payload);
-        int requested = Math.Clamp(message?.Controllers ?? 1, 1, VirtualGamepadManager.MaxControllers);
-
-        try
-        {
-            if (_gamepads == null)
-            {
-                _gamepads = new VirtualGamepadManager();
-                _gamepads.Rumble += OnGamepadRumble;
-            }
-
-            int count = _gamepads.Start(requested);
-            _send(OutgoingMessages.GamepadStarted(count));
-            Console.WriteLine($"[gamepad] {count} virtual Xbox 360 controller(s) connected.");
-            AsyncLogger.Info($"[gamepad] {count} virtual Xbox 360 controller(s) connected successfully.");
-        }
-        catch (Exception ex)
-        {
-            StopGamepads();
-            string messageText = DescribeGamepadError(ex);
-            _send(OutgoingMessages.GamepadUnavailable(messageText));
-            Console.Error.WriteLine($"[gamepad] unavailable: {messageText}");
-            AsyncLogger.Error($"[gamepad] Gamepads unavailable: {messageText}");
-        }
-    }
-
     private void OnInputStart(ReadOnlySpan<byte> payload)
     {
         // Viewer sessions require the live pipeline exactly as before; a controller session
@@ -667,7 +632,6 @@ public sealed class StreamSession : IDisposable
     private void StartPipeline()
     {
         _sender = new MediaSender(Ports.PreferredMedia, _clientAddress);
-        _sender.OnGamepadState = OnGamepadState;
         _sender.OnMouseMotion = OnMouseMotion;
         _sender.OnClientConnected = OnMediaClientConnected;
         _sender.Start();
@@ -937,27 +901,6 @@ public sealed class StreamSession : IDisposable
         AsyncLogger.Error($"[audio] Capture stopped: {message}");
     }
 
-    private void OnGamepadState(GamepadState state)
-    {
-        try
-        {
-            _gamepads?.Apply(state);
-        }
-        catch (Exception ex)
-        {
-            string message = DescribeGamepadError(ex);
-            StopGamepads();
-            _send(OutgoingMessages.GamepadUnavailable(message));
-            Console.Error.WriteLine($"[gamepad] virtual controller stopped: {message}");
-            AsyncLogger.Error($"[gamepad] Virtual controller stopped: {message}");
-        }
-    }
-
-    private void OnGamepadRumble(int controllerId, byte largeMotor, byte smallMotor)
-    {
-        _send(OutgoingMessages.GamepadRumble(controllerId, largeMotor, smallMotor));
-    }
-
     private void OnMouseMotion(MouseMotion motion)
     {
         if (!InputAllowed)
@@ -991,7 +934,6 @@ public sealed class StreamSession : IDisposable
         _streaming = false;
         AsyncLogger.Info("[session] Stopping stream pipeline.");
         StopInput();
-        StopGamepads();
         StopAudio();
         try { _captureCts?.Cancel(); } catch { }
         try { _captureThread?.Join(1500); } catch { }
@@ -1004,7 +946,6 @@ public sealed class StreamSession : IDisposable
         try { _duplicator?.Dispose(); } catch { }
         if (_sender != null)
         {
-            _sender.OnGamepadState = null;
             _sender.OnMouseMotion = null;
             _sender.OnClientConnected = null;
         }
@@ -1029,14 +970,6 @@ public sealed class StreamSession : IDisposable
         try { _audioSender?.Dispose(); } catch { }
         _audioCapture = null;
         _audioSender = null;
-    }
-
-    private void StopGamepads()
-    {
-        if (_gamepads != null)
-            _gamepads.Rumble -= OnGamepadRumble;
-        try { _gamepads?.Dispose(); } catch { }
-        _gamepads = null;
     }
 
     private void StopMouse()
@@ -1401,21 +1334,6 @@ public sealed class StreamSession : IDisposable
         Console.WriteLine("  |  (valid for 60 seconds)              |");
         Console.WriteLine("  +--------------------------------------+");
         Console.WriteLine();
-    }
-
-    private static string DescribeGamepadError(Exception ex)
-    {
-        string type = ex.GetType().Name;
-        if (type.Contains("BusNotFound", StringComparison.OrdinalIgnoreCase) ||
-            type.Contains("DllNotFound", StringComparison.OrdinalIgnoreCase))
-        {
-            return "ViGEmBus is not installed. Install the official ViGEmBus 1.22 driver, then restart LocalStream.";
-        }
-        if (type.Contains("BusVersionMismatch", StringComparison.OrdinalIgnoreCase))
-            return "The installed ViGEmBus driver is incompatible. Install ViGEmBus 1.22 and restart LocalStream.";
-        return string.IsNullOrWhiteSpace(ex.Message)
-            ? "The Windows virtual Xbox controller could not be created."
-            : ex.Message;
     }
 
     public void Dispose()

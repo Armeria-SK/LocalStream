@@ -225,9 +225,6 @@ try
             string audioStatus = session.AudioStreaming
                 ? $"audio {audioKbps,4} kbps"
                 : "audio off";
-            string gamepadStatus = session.GamepadCount > 0
-                ? $"gamepads {session.GamepadCount}"
-                : "gamepads off";
 
             bool clientStatsFresh = session.LastClientStatsAgeMs < 3000;
             int clientInterval = Math.Max(1, session.LastClientStatsIntervalMs);
@@ -277,7 +274,7 @@ try
                     $"media {(session.MediaEndpointReady ? "ready" : "WAIT"),5} {sentFps,3} fps/{mediaKbps,5} kbps | " +
                     $"client dropped {session.LastClientFramesDropped,3} | IDR req/s {idrDelta} | " +
                     $"cap {realDelta}re/{pointerDelta}po/{timeoutDelta}to ~{presentsPerSec}pres | " +
-                    $"{audioStatus} | {gamepadStatus}");
+                    $"{audioStatus}");
                 Console.WriteLine(diagnosticLine);
                 // GUI/non-headless runs previously wrote diagnostics only to the console, so the
                 // collected localstream.app.log lacked the evidence needed for field debugging.
