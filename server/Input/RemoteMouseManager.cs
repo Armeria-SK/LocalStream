@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using LocalStream.Server.Protocol;
 
@@ -26,9 +27,15 @@ public sealed class RemoteMouseManager : IDisposable
     private const uint Absolute = 0x8000;
     private const uint XButton1 = 0x0001;
     private const uint XButton2 = 0x0002;
+    // A touch tap arrives as a down/up pair about 1 ms apart, far shorter than any physical
+    // click (~50-100 ms). Windows' caption move loop and apps' drag detection can miss an up
+    // that lands that soon after the down and stay in a drag until the next click, which
+    // looked like a stuck button. Holding every press at least this long avoids that.
+    private const int MinButtonHoldMs = 50;
 
     private readonly object _gate = new();
     private readonly HashSet<string> _pressed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _pressedAt = new(StringComparer.OrdinalIgnoreCase);
     private uint _lastMotionSequence;
     private uint _lastButtonSequence;
     private bool _hasMotionSequence;
@@ -106,8 +113,28 @@ public sealed class RemoteMouseManager : IDisposable
         return new CursorPosition(x, y, hidden);
     }
 
+    /// <summary>
+    /// Called only from the ordered control-message thread, so waiting out
+    /// <see cref="MinButtonHoldMs"/> before a release delays later control messages instead of
+    /// reordering them. The wait happens outside the lock so UDP motion keeps flowing.
+    /// </summary>
     public void SetButton(uint sequence, string button, bool down)
     {
+        if (!down)
+        {
+            long waitMs = 0;
+            lock (_gate)
+            {
+                if (_pressed.Contains(button) && _pressedAt.TryGetValue(button, out long pressedAt))
+                {
+                    long heldMs = (Stopwatch.GetTimestamp() - pressedAt) * 1000 / Stopwatch.Frequency;
+                    waitMs = MinButtonHoldMs - heldMs;
+                }
+            }
+            if (waitMs > 0)
+                Thread.Sleep((int)waitMs);
+        }
+
         lock (_gate)
         {
             if (_disposed)
@@ -134,9 +161,14 @@ public sealed class RemoteMouseManager : IDisposable
             input[0] = MouseInput(0, 0, data, flags);
             Send(input);
             if (down)
+            {
                 _pressed.Add(normalized);
+                _pressedAt[normalized] = Stopwatch.GetTimestamp();
+            }
             else
+            {
                 _pressed.Remove(normalized);
+            }
         }
     }
 
