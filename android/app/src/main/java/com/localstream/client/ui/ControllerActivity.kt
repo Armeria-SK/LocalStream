@@ -22,7 +22,10 @@ import java.nio.ByteOrder
  * keyboard while another client owns the screen output.
  *
  * - Touchpad → control-channel `MOUSE_MOTION` (§2.3): this connection never learned a
- *   media endpoint, so the 28-byte DSMI datagram travels as its JSON twin.
+ *   media endpoint, so the 28-byte DSMI datagram travels as its JSON twin. The pad behaves
+ *   like a laptop trackpad (tap-to-click, natural two-finger scroll with glide, pinch
+ *   zoom as Ctrl + wheel) with
+ *   physical-style left/right click zones along its bottom edge.
  * - Text field → phone IME as composer: every edit is diffed into `KEYBOARD_TEXT`
  *   (Unicode, carries kana/kanji/emoji) or Backspace `KEYBOARD_KEY` transitions at the
  *   PC's focused caret (§2.4). Tapping the field raises the phone keyboard, which is the
@@ -57,9 +60,19 @@ class ControllerActivity : AppCompatActivity() {
             // Clean screen is a stream-viewer concern; the controller screen is always
             // controls-visible, so three-finger gestures belong to the touchpad itself.
             shouldHandleCleanScreenGesture = { false },
-            onCleanScreenReveal = { }
+            onCleanScreenReveal = { },
+            trackpad = true,
+            // Pinch → Ctrl + wheel on the PC, sharing the one keyboard sequence space.
+            zoomModifier = { down -> ControlClient.sendKeyboardKey(keySequence++, HID_LEFT_CTRL, down) }
         )
         binding.touchpad.setOnTouchListener(remoteMouse)
+        remoteMouse.attachClickZone(binding.zoneLeftClick, "left")
+        remoteMouse.attachClickZone(binding.zoneRightClick, "right")
+        // Touch goes through the zone listeners; these only serve accessibility activation.
+        binding.zoneLeftClick.setOnClickListener { remoteMouse.clickLeft() }
+        binding.zoneRightClick.setOnClickListener { remoteMouse.clickRight() }
+        // Rounded pad corners must also clip the zones' pressed highlight.
+        binding.trackpadFrame.clipToOutline = true
 
         binding.etRemoteText.addTextChangedListener(composerWatcher)
         // IME "Enter" (singleLine action key): send a real HID Enter — a '\n' character
@@ -69,8 +82,6 @@ class ControllerActivity : AppCompatActivity() {
             true
         }
 
-        binding.btnLeftClick.setOnClickListener { remoteMouse.clickLeft() }
-        binding.btnRightClick.setOnClickListener { remoteMouse.clickRight() }
         binding.btnEnter.setOnClickListener { sendUsageKey(HID_ENTER) }
         binding.btnBackspace.setOnClickListener { sendUsageKey(HID_BACKSPACE) }
 
@@ -190,8 +201,9 @@ class ControllerActivity : AppCompatActivity() {
     }
 
     private companion object {
-        /** USB HID Keyboard-page usages: Enter/Return, Backspace (§2.4). */
+        /** USB HID Keyboard-page usages: Enter/Return, Backspace, Left Control (§2.4). */
         const val HID_ENTER = 0x28
         const val HID_BACKSPACE = 0x2A
+        const val HID_LEFT_CTRL = 0xE0
     }
 }
