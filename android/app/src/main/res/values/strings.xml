@@ -24,18 +24,61 @@
     <string name="status_reconnecting">Reconnecting…</string>
     <string name="status_disconnected">Disconnected</string>
 
-    <!-- Discovery screen (v0.5.0 restyle) -->
-    <string name="discovery_initial_subtitle">Searching this Wi-Fi network…</string>
-    <string name="discovery_empty_title">Searching for PCs on your WiFi…</string>
-    <string name="discovery_empty_subtitle">Make sure the PC app is running and both devices share the same network.</string>
-    <string name="discovery_manual_label">Manual connection</string>
-    <string name="discovery_manual_hint">Server IP address</string>
-    <string name="discovery_connect_action">Connect</string>
-    <string name="discovery_paired_badge">PAIRED</string>
-    <string name="pair_dialog_body">Enter the 6-digit PIN shown on your PC</string>
-    <string name="pair_dialog_hint">PIN</string>
-    <string name="pair_dialog_positive">Pair</string>
-    <string name="pair_dialog_negative">Cancel</string>
+    <!-- Discovery screen -->
+    <string name="main_tagline">Find a PC on the same network\nand connect to it</string>
+    <string name="status_searching_title">Searching for PCs…</string>
+    <string name="status_searching_body">Looking for Windows PCs on this network automatically.</string>
+    <string name="status_connecting_title">Connecting…</string>
+    <string name="status_connecting_body">Connecting to %1$s (%2$s)…</string>
+    <string name="status_reconnecting_body">Connection interrupted; retrying…</string>
+    <string name="status_controller_body">Connecting as touchpad &amp; keyboard…</string>
+    <string name="status_pairing_title">Waiting for pairing</string>
+    <string name="status_pairing_body">Enter the PIN shown on the PC.</string>
+    <string name="status_busy_title">Screen output is in use</string>
+    <string name="status_busy_body">Choose how to connect this device.</string>
+    <string name="status_failed_title">Could not connect</string>
+    <string name="status_failed_body">Tap a PC to try again.</string>
+    <string name="found_header">PCs found</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="found_empty">No PCs found yet</string>
+    <string name="not_found_header">Can\'t find your PC?</string>
+    <string name="not_found_tips">• Enter its IP address manually with the button below\n• Check that the PC app is running on the same network</string>
+    <string name="paired_badge">Paired</string>
+    <string name="manual_connect_action">Connect by IP</string>
+    <string name="manual_dialog_body">Enter the IP address of the PC to connect to.</string>
+    <string name="manual_dialog_hint">IP address</string>
+    <string name="manual_dialog_helper">e.g. 192.168.1.12</string>
+    <string name="manual_dialog_error_empty">Enter an IP address</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+
+    <!-- First-time pairing screen -->
+    <string name="pair_title">First-time pairing</string>
+    <string name="pair_lead">Enter the 6-digit PIN shown on the PC to pair this device.</string>
+    <string name="pair_instruction">Enter the 6-digit PIN shown on the PC\'s screen.</string>
+    <string name="pair_note">The PIN is valid for 60 seconds, with up to 3 tries.</string>
+    <string name="pair_error_length">Enter all 6 digits</string>
+    <string name="pair_error_wrong">Wrong PIN. %1$d attempt(s) left.</string>
+    <string name="pair_verifying">Checking the PIN…</string>
+    <string name="pair_requesting">Requesting a new PIN…</string>
+    <string name="pair_new_pin">A new PIN is now shown on the PC.</string>
+    <string name="pair_request_pin">Get a new PIN</string>
+    <string name="pair_help_title">About pairing</string>
+    <string name="pair_help_body">The PIN appears in the LocalStream server window on your PC.\n\n• It is valid for 60 seconds. If it expires, tap “Get a new PIN”.\n• After 3 wrong PINs the connection is closed.\n• Pairing is needed only once. Next time, just pick the PC to connect.</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_help">Help</string>
+    <string name="cd_pin_field">6-digit PIN</string>
+
+    <!-- Connection errors -->
+    <string name="error_connect_failed">Could not connect: %1$s</string>
+    <string name="error_connect_failed_default">connection failed</string>
+    <string name="error_connection_lost">Connection lost</string>
+    <string name="error_bad_version">Server protocol mismatch: %1$s</string>
+    <string name="error_busy_default">That connection role is already in use</string>
+    <string name="error_pair_timeout">The PIN expired. Connect again to get a new one.</string>
+    <string name="error_pair_failed">Too many wrong PINs. Connect again to retry.</string>
+    <string name="error_generic">Connection error (%1$s)</string>
 
     <!-- Role selection when a second device finds the screen output busy -->
     <string name="role_dialog_title">Screen output is in use</string>

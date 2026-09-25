@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- In-app LocalStream mark: a lightning bolt (low latency) beside a play chevron
+     (streaming), as on the discovery screen design. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="80dp"
+    android:height="64dp"
+    android:viewportWidth="120"
+    android:viewportHeight="96">
+    <path android:pathData="M58,6 Q60,3 57,4 L20,52 Q18,56 22,56 L42,56 L33,88 Q32,92 35,89 L74,42 Q76,38 72,38 L52,38 L60,8 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endColor="#FF1463E0"
+                android:endX="30"
+                android:endY="92"
+                android:startColor="#FF3B9BFF"
+                android:startX="60"
+                android:startY="4"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M80,32 Q80,26 85,29 L108,43 Q114,48 108,53 L85,67 Q80,70 80,64 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endColor="#FF14C4C9"
+                android:endX="112"
+                android:endY="66"
+                android:startColor="#FF2FE3B0"
+                android:startX="80"
+                android:startY="30"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+</vector>

@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.localstream.client.databinding.ItemServerBinding
 import com.localstream.client.net.DiscoveredServer
+import com.localstream.client.net.DiscoveryClient
 
 class ServerAdapter(
     /** Whether this server IP has a previously-paired token, shown as a small badge. */
@@ -46,7 +47,12 @@ class ServerAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = items[position]
         holder.binding.tvServerName.text = item.name
-        holder.binding.tvServerIp.text = "${item.ip}:${item.controlPort}"
+        // The port only matters to the user when the PC app was moved off its default.
+        holder.binding.tvServerIp.text = if (item.controlPort == DiscoveryClient.DEFAULT_CONTROL_PORT) {
+            item.ip
+        } else {
+            "${item.ip}:${item.controlPort}"
+        }
         holder.binding.tvPairedBadge.visibility = if (isPaired(item.ip)) View.VISIBLE else View.GONE
         holder.binding.itemRoot.setOnClickListener { onClick(item) }
     }
