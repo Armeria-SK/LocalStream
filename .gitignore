@@ -13,11 +13,6 @@ android/captures/
 *.apk
 *.aab
 
-# macOS native client
-macos/build/
-*.app
-*.dmg
-
 # OS
 .DS_Store
 Thumbs.db

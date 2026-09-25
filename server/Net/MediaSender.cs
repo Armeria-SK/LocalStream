@@ -7,7 +7,7 @@ using LocalStream.Server.Protocol;
 namespace LocalStream.Server.Net;
 
 /// <summary>
-/// Media transport (PROTOCOL.md §3). Splits each encoded H.264 access unit into
+/// Media transport. Splits each encoded H.264 access unit into
 /// &lt;=1200-byte chunks, generates interleaved XOR FEC parity, and unicasts each
 /// datagram to the client address learned from "DSMH" hole-punch packets.
 ///
@@ -39,7 +39,7 @@ public sealed class MediaSender : IDisposable
     private long _sendFailures;
     private long _pacingWaitUs;
 
-    // Token-bucket micro-pacing (PROTOCOL.md §3.3). Only oversized IDR bursts get shaped: the
+    // Token-bucket micro-pacing. Only oversized IDR bursts get shaped: the
     // bucket comfortably covers a normal P-frame, so those pass untouched. Shaping a ~150-300 KB
     // IDR at the 96 Mbps ceiling adds a one-frame ~12-25 ms spike instead of a 2x/s burst that
     // makes a Wi-Fi client drop 3-8 packets and slash bitrate. _pacingBytesPerSec and
@@ -133,10 +133,10 @@ public sealed class MediaSender : IDisposable
         _expectedClientAddress = expectedClientAddress;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 
-        // Keep the OS send buffer small: dropping beats queuing for latency (PROTOCOL.md §3.3).
+        // Keep the OS send buffer small: dropping beats queuing for latency.
         try { _socket.SendBufferSize = 256 * 1024; } catch { }
 
-        // DSCP AF41 / TOS 0x88, best-effort (PROTOCOL.md §3.3). IP_TOS = 3; Windows usually
+        // DSCP AF41 / TOS 0x88, best-effort. IP_TOS = 3; Windows usually
         // ignores this without qWAVE, hence best-effort. May throw without privilege.
         try { _socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)3, 0x88); }
         catch { }

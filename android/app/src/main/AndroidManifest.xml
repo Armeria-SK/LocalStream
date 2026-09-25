@@ -34,7 +34,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
             android:theme="@style/Theme.LocalStream.Fullscreen" />
 
-        <!-- Second-device controller role (§2.1): touchpad + keyboard, no stream. -->
+        <!-- Second-device controller role: touchpad + keyboard, no stream. -->
         <activity
             android:name=".ui.ControllerActivity"
             android:exported="false"

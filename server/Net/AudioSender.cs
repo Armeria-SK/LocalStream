@@ -6,7 +6,7 @@ using LocalStream.Server.Protocol;
 namespace LocalStream.Server.Net;
 
 /// <summary>
-/// Dedicated UDP audio transport (PROTOCOL.md §3A). Captured PCM is grouped into fixed
+/// Dedicated UDP audio transport. Captured PCM is grouped into fixed
 /// 5 ms blocks and sent immediately to the endpoint learned from DSAH hole punches.
 /// </summary>
 public sealed class AudioSender : IDisposable

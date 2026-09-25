@@ -6,7 +6,7 @@ namespace LocalStream.Server.Net;
 /// <summary>
 /// Binds a UDP socket to a fixed port with a short retry, falling back to an ephemeral
 /// port (with a loud warning) only after the fixed port proves persistently unavailable.
-/// Fixed ports matter: PROTOCOL.md clients may hard-code expectations, and a silent
+/// Fixed ports matter: clients may hard-code expectations, and a silent
 /// ephemeral fallback made startup behavior unpredictable across restarts.
 /// </summary>
 internal static class UdpPortBinder

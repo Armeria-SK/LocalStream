@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Discovery + connect screen. Broadcasts DSPROBE1 while visible, shows discovered servers,
- * and always offers manual IP entry as a fallback (protocol §1). Drives HELLO / pairing via
+ * and always offers manual IP entry as a fallback. Drives HELLO / pairing via
  * the process-wide [ControlClient] singleton and hands off to [StreamActivity] once the
  * session reaches HELLO_OK.
  */
@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
     /** True from the moment the user initiates a connect until we've navigated away (or the
      * attempt failed). Gates both duplicate connect taps and the READY-state navigation: the
      * control channel deliberately stays connected after StreamActivity finishes (state stays
-     * READY per protocol §5), and without this gate the replayed READY state would instantly
+     * READY), and without this gate the replayed READY state would instantly
      * relaunch StreamActivity in an endless bounce. */
     private var pendingConnect = false
 
@@ -174,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                 if (pendingConnect) {
                     pendingConnect = false
                     // A controller-role connection lands on the touchpad&keyboard screen;
-                    // a viewer connection on the stream (§2.1).
+                    // a viewer connection on the stream.
                     val target = if (ControlClient.isController) {
                         ControllerActivity::class.java
                     } else {
@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleEvent(msg: ServerMessage) {
         when (msg) {
             is ServerMessage.PairOk -> {
-                // ControlClient re-sends HELLO with the new token itself (§2.2); the UI only
+                // ControlClient re-sends HELLO with the new token itself; the UI only
                 // needs to take down the PIN dialog.
                 dismissPairDialog()
             }
@@ -206,7 +206,7 @@ class MainActivity : AppCompatActivity() {
             }
             is ServerMessage.Error -> {
                 if (msg.code == "BUSY" && !ControlClient.isController) {
-                    // Screen output already taken (§2.1): offer the controller role instead
+                    // Screen output already taken: offer the controller role instead
                     // of a dead end. Minimal UI reset first so the dialog doesn't fight the
                     // spinner; the server closes the socket right after BUSY, and the
                     // trailing CONNECTION_LOST is swallowed while the dialog is up.
@@ -239,7 +239,7 @@ class MainActivity : AppCompatActivity() {
         else -> msg.message.ifEmpty { "Connection error (${msg.code})" }
     }
 
-    /** The second device met the busy screen-output slot (§2.1): offer the controller
+    /** The second device met the busy screen-output slot: offer the controller
      * role. "Screen output" follows the agreed behavior — an explicit error, never taking
      * the output over from the device that is already displaying. */
     private fun showRoleDialog() {

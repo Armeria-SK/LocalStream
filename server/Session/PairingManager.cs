@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace LocalStream.Server.Session;
 
 /// <summary>
-/// TOFU pairing store (PROTOCOL.md §2.2). Persists clientId -> token in
+/// TOFU pairing store. Persists clientId -> token in
 /// paired_clients.json next to the executable. Thread-safe.
 /// </summary>
 public sealed class PairingManager

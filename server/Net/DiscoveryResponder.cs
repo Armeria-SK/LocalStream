@@ -6,7 +6,7 @@ using LocalStream.Server.Protocol;
 namespace LocalStream.Server.Net;
 
 /// <summary>
-/// Discovery responder (PROTOCOL.md §1). Listens on UDP 47800 for the 8 ASCII bytes
+/// Discovery responder. Listens on UDP 47800 for the 8 ASCII bytes
 /// "DSPROBE1" and replies unicast to the sender with a single DSREPLY JSON datagram.
 /// </summary>
 public sealed class DiscoveryResponder : IDisposable

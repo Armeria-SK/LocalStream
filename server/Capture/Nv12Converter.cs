@@ -50,7 +50,7 @@ public sealed class Nv12Converter : IDisposable
     /// <summary>
     /// Converts a BGRA source of (<paramref name="inWidth"/>, <paramref name="inHeight"/>)
     /// into NV12 output textures of (<paramref name="outWidth"/>, <paramref name="outHeight"/>).
-    /// The VideoProcessor scales input to output during the blit, so quality downscaling is free
+    /// The VideoProcessor scales input to output during the blit, so any downscaling is free
     /// on the GPU. All four dimensions must be even (NV12 requirement).
     /// </summary>
     public Nv12Converter(

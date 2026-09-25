@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace LocalStream.Server.Protocol;
 
-/// <summary>Fixed ports from PROTOCOL.md. Media port is negotiated (preferred 47802).</summary>
+/// <summary>Fixed ports. The media port is negotiated (preferred 47802).</summary>
 public static class Ports
 {
     public const int Discovery = 47800;   // UDP
@@ -82,15 +82,12 @@ public sealed class StartStreamMessage
     [JsonPropertyName("maxBitrateKbps")] public int MaxBitrateKbps { get; set; }
     [JsonPropertyName("fps")] public int Fps { get; set; }
 
-    /// <summary>Optional per-stream quality: "native" (default) or "720p". Absent = server default.</summary>
-    [JsonPropertyName("quality")] public string? Quality { get; set; }
-
     /// <summary>Optional codecs the client can decode in hardware, in preference order
     /// ("hevc", "h264"). Absent = H.264 only (every pre-HEVC client).</summary>
     [JsonPropertyName("codecs")] public string[]? Codecs { get; set; }
 
     /// <summary>Optional loss-recovery modes the client implements. "refresh" = it keeps
-    /// decoding across a lost frame and sends REQUEST_REFRESH (PROTOCOL.md §2.3).</summary>
+    /// decoding across a lost frame and sends REQUEST_REFRESH.</summary>
     [JsonPropertyName("recovery")] public string[]? Recovery { get; set; }
 }
 
@@ -141,7 +138,7 @@ public sealed class KeyboardKeyMessage
     [JsonPropertyName("down")] public bool Down { get; set; }
 }
 
-/// <summary>Control-channel mouse motion (PROTOCOL.md §2.3): the controller-role path,
+/// <summary>Control-channel mouse motion: the controller-role path,
 /// which never learns the media endpoint the UDP DSMI datagrams would use.</summary>
 public sealed class MouseMotionMessage
 {
@@ -153,7 +150,7 @@ public sealed class MouseMotionMessage
     [JsonPropertyName("vwheel")] public int VWheel { get; set; }
 }
 
-/// <summary>Unicode text burst (PROTOCOL.md §2.4): one ordered transition covering the
+/// <summary>Unicode text burst: one ordered transition covering the
 /// whole string, for IME output with no HID usage (kana, kanji, emoji).</summary>
 public sealed class KeyboardTextMessage
 {

@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace LocalStream.Server.Protocol;
 
 /// <summary>
-/// Fixed low-latency audio datagram defined by PROTOCOL.md §3A. Header fields are
+/// Fixed low-latency audio datagram. Header fields are
 /// big-endian; the PCM payload is signed 16-bit little-endian stereo.
 /// </summary>
 public static class AudioPacket

@@ -9,9 +9,9 @@ using LocalStream.Server.Session;
 namespace LocalStream.Server.Net;
 
 /// <summary>
-/// Control channel (PROTOCOL.md §2): TCP 47801, length-prefixed (uint32 BE) UTF-8 JSON.
+/// Control channel: TCP 47801, length-prefixed (uint32 BE) UTF-8 JSON.
 /// Handles framing, keepalive (PING/PONG + 6 s dead-connection timeout), and the slot
-/// rules of §2.1: at most one viewer (screen output) session and one controller
+/// rules: at most one viewer (screen output) session and one controller
 /// session at a time, decided from the role field of the first HELLO. Protocol
 /// semantics live in <see cref="StreamSession"/>.
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class ControlServer : IDisposable
     private int _connections;
     private StreamSession? _current;
 
-    /// <summary>The active session, if any (read by the console stats printer and web dashboard).</summary>
+    /// <summary>The active session, if any (read by the console stats printer).</summary>
     public StreamSession? Current => Volatile.Read(ref _current);
 
     public ControlServer(PairingManager pairing, string serverName, ServerOptions options)
@@ -66,7 +66,7 @@ public sealed class ControlServer : IDisposable
             catch (SocketException) { continue; }
 
             // Slot claiming and rejection moved into HandleClientAsync: the deciding frame
-            // (HELLO's role field, §2.1) only arrives once the socket is up, and a second
+            // (HELLO's role field) only arrives once the socket is up, and a second
             // client must receive a BUSY answer rather than a blind pre-HELLO drop.
             if (Interlocked.Increment(ref _connections) > MaxConnections)
             {
@@ -115,7 +115,7 @@ public sealed class ControlServer : IDisposable
         StreamSession? session = null;
         try
         {
-            // The role is declared in the first frame (HELLO's optional "role", §2.1).
+            // The role is declared in the first frame (HELLO's optional "role").
             // Deciding the slot here — after that frame instead of at accept time — is what
             // lets a second device receive BUSY and then reconnect as the controller.
             byte[]? first = await ReadFrameAsync(stream, ct);
@@ -137,7 +137,7 @@ public sealed class ControlServer : IDisposable
                 if (Interlocked.CompareExchange(ref _busy, 1, 0) == 1)
                 {
                     // Screen output stays single-client; the Android app turns this code
-                    // into the role-selection dialog instead of a dead end (§2.1).
+                    // into the role-selection dialog instead of a dead end.
                     await WriteFrameAsync(stream, OutgoingMessages.Error("BUSY", "screen output is already in use by another client"));
                     return;
                 }
@@ -162,15 +162,9 @@ public sealed class ControlServer : IDisposable
 
             bool HandleFrame(byte[] frame)
             {
-                // Drain any dashboard commands on this (control) thread before handling the
-                // frame, so session start/stop stays serialized with control-message handling.
-                // Bounded latency: the client PINGs every 2 s, so a queued command runs within
-                // one keepalive interval even on an otherwise idle control channel.
-                active.DrainCommands();
-
                 string? type = ReadType(frame);
                 if (type == null)
-                    return false; // Malformed frame: either side closes the socket (PROTOCOL.md §2).
+                    return false; // Malformed frame: either side closes the socket.
 
                 if (type == "PING")
                 {
@@ -218,7 +212,7 @@ public sealed class ControlServer : IDisposable
         }
     }
 
-    // ---- First-frame role (PROTOCOL.md §2.1) ----------------------------------------------
+    // ---- First-frame role ----------------------------------------------
 
     /// <summary>True only when the first frame is a HELLO that explicitly declares
     /// <c>role:"controller"</c>. Anything else — including every pre-v0.8 client that

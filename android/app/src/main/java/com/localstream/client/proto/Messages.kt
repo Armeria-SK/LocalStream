@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Control-channel JSON message models per docs/PROTOCOL.md §2.
+ * Control-channel JSON message models.
  *
  * We use org.json (bundled in the Android platform) rather than kotlinx.serialization to
  * avoid pulling in a KSP/serialization plugin for a handful of small, flat messages.
@@ -18,7 +18,7 @@ const val PROTOCOL_VERSION = 1
 object ClientMessages {
 
     /**
-     * [role] declares the session role per §2.1: `"viewer"` (default — screen output) or
+     * [role] declares the session role: `"viewer"` (default — screen output) or
      * `"controller"` (touchpad & keyboard for a second device). Pre-v0.8 servers ignore
      * the unknown field, which keeps a controller attempt on an old server behaving
      * exactly like a viewer attempt (a plain BUSY).
@@ -50,21 +50,14 @@ object ClientMessages {
         }.toString()
 
     /**
-     * [quality] is `"native"` (default) or `"720p"`. Servers older than v0.5.0 ignore the
-     * unknown field and stream native resolution, which keeps this change backward-compatible.
-     * The client always sizes its decoder from `STREAM_STARTED.width/height`, never from this
-     * request, so a server that ignores or rejects the field cannot desync the client.
-     */
-    /**
      * [codecs] lists the codecs this device decodes in hardware, in preference order
      * ("hevc", "h264"); [recovery] the loss-recovery modes it implements ("refresh" = keeps
-     * decoding across a lost frame and sends REQUEST_REFRESH). Both are optional on the wire
-     * (§2.3): a server that ignores them streams H.264 with IDR recovery, as before.
+     * decoding across a lost frame and sends REQUEST_REFRESH). Both are optional on the wire:
+     * a server that ignores them streams H.264 with IDR recovery, as before.
      */
     fun startStream(
         maxBitrateKbps: Int,
         fps: Int,
-        quality: String = "native",
         codecs: List<String> = listOf("h264"),
         recovery: List<String> = emptyList()
     ): String =
@@ -72,7 +65,6 @@ object ClientMessages {
             put("type", "START_STREAM")
             put("maxBitrateKbps", maxBitrateKbps)
             put("fps", fps)
-            put("quality", quality)
             put("codecs", JSONArray(codecs))
             put("recovery", JSONArray(recovery))
         }.toString()
@@ -117,7 +109,7 @@ object ClientMessages {
         }.toString()
 
     /**
-     * Controller-role input negotiation (§2.1): unlike [startMouseInput] this enables the
+     * Controller-role input negotiation: unlike [startMouseInput] this enables the
      * keyboard too, because a controller session never streams and therefore has no
      * STREAM_STARTED to piggyback the usual input start on.
      */
@@ -129,7 +121,7 @@ object ClientMessages {
         }.toString()
 
     /**
-     * Control-channel mouse motion (§2.3): the JSON twin of the 28-byte DSMI datagram,
+     * Control-channel mouse motion: the JSON twin of the 28-byte DSMI datagram,
      * for connections that never learned a media endpoint to send the UDP original on.
      */
     fun mouseMotion(
@@ -150,7 +142,7 @@ object ClientMessages {
             put("vwheel", vwheel)
         }.toString()
 
-    /** One ordered HID key transition (§2.4): `usage` is a USB HID Keyboard-page usage ID. */
+    /** One ordered HID key transition: `usage` is a USB HID Keyboard-page usage ID. */
     fun keyboardKey(sequence: Long, usage: Int, down: Boolean): String =
         JSONObject().apply {
             put("type", "KEYBOARD_KEY")
@@ -160,7 +152,7 @@ object ClientMessages {
         }.toString()
 
     /**
-     * Unicode text burst (§2.4): one ordered message covering the whole string, for IME
+     * Unicode text burst: one ordered message covering the whole string, for IME
      * output with no HID key position (kana, kanji, emoji). Shares [sequence] space with
      * [keyboardKey] — the host keeps a single monotonic keyboard sequence.
      */
@@ -193,7 +185,7 @@ object ClientMessages {
             put("type", "REQUEST_IDR")
         }.toString()
 
-    /** Loss repair on a refresh-recovery stream (§2.3): one intra-refresh wave, no IDR. */
+    /** Loss repair on a refresh-recovery stream: one intra-refresh wave, no IDR. */
     fun requestRefresh(): String =
         JSONObject().apply {
             put("type", "REQUEST_REFRESH")
@@ -254,7 +246,7 @@ sealed class ServerMessage {
         val height: Int,
         val fps: Int,
         val codec: String,
-        /** "refresh" when the server repairs loss with intra refresh (§2.3), else "idr". */
+        /** "refresh" when the server repairs loss with intra refresh, else "idr". */
         val recovery: String,
         val encoderBackend: String,
         val clockBaseUs: Long

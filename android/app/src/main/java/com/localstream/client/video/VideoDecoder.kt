@@ -651,13 +651,13 @@ class VideoDecoder(
         private fun mimeFor(codec: String): String =
             if (codec.equals("hevc", ignoreCase = true)) MIME_HEVC else MIME_AVC
 
-        /** Stream sizes a PC desktop actually produces (720p mode, then common native sizes). */
+        /** Common native desktop sizes the PC streams at. */
         private val STREAM_SIZES = listOf(
             1280 to 720, 1920 to 1080, 2560 to 1440, 3440 to 1440, 3840 to 2160
         )
 
         /**
-         * Codecs to offer in START_STREAM (§2.3), in preference order. HEVC is offered only
+         * Codecs to offer in START_STREAM, in preference order. HEVC is offered only
          * when a hardware HEVC decoder plays 1080p60 and every real stream size at 60 fps
          * that hardware H.264 plays — the server picks the resolution, so HEVC must never be
          * the reason a stream cannot decode. Comparing concrete sizes (not the advertised

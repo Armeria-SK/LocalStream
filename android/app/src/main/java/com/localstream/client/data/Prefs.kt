@@ -12,7 +12,7 @@ import java.util.UUID
  *    every HELLO so the server can map clientId -> pairing token.
  *  - The single most-recently-paired server (ip, token, name). Pairing tokens are only
  *    valid against the server that issued them, so if the user connects to a different
- *    server IP we simply send an empty token and re-pair (per protocol §2.2).
+ *    server IP we simply send an empty token and re-pair.
  */
 class Prefs(context: Context) {
 
@@ -64,22 +64,11 @@ class Prefs(context: Context) {
         }
     }
 
-    /** Preferred stream quality: `"native"` (default) or `"720p"`, per docs/PROTOCOL.md
-     * START_STREAM.quality. Persisted so the choice survives app restarts. */
-    var streamQuality: String
-        get() = sp.getString(KEY_STREAM_QUALITY, QUALITY_NATIVE) ?: QUALITY_NATIVE
-        set(value) {
-            sp.edit().putString(KEY_STREAM_QUALITY, value).apply()
-        }
-
     companion object {
         private const val PREFS_NAME = "localstream_prefs"
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_SERVER_IP = "server_ip"
         private const val KEY_SERVER_TOKEN = "server_token"
         private const val KEY_SERVER_NAME = "server_name"
-        private const val KEY_STREAM_QUALITY = "stream_quality"
-        const val QUALITY_NATIVE = "native"
-        const val QUALITY_720P = "720p"
     }
 }

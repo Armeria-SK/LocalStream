@@ -7,7 +7,7 @@ using Vortice.DXGI;
 namespace LocalStream.Server.Capture;
 
 /// <summary>
-/// DXGI Desktop Duplication on the primary output (ARCHITECTURE.md latency pipeline).
+/// DXGI Desktop Duplication on the primary output.
 ///
 /// Owns the shared D3D11 device used by the whole GPU pipeline (converter + encoder).
 /// AcquireNextFrame runs with a short timeout; on timeout the desktop is simply idle and

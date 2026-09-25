@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using LocalStream.Server.Audio;
@@ -22,9 +21,9 @@ public enum SessionState
 }
 
 /// <summary>
-/// Per-connection session controller: implements the control-channel state machine
-/// (PROTOCOL.md §2), owns the capture/encode/send pipeline, and runs the adaptation
-/// controller (§4). All control messages are delivered from ControlServer's single read
+/// Per-connection session controller: implements the control-channel state machine,
+/// owns the capture/encode/send pipeline, and runs the adaptation
+/// controller. All control messages are delivered from ControlServer's single read
 /// loop, so message handling here is single-threaded (the encoded-frame counters, touched
 /// from the pipeline threads, use Interlocked / volatile).
 /// </summary>
@@ -36,10 +35,6 @@ public sealed class StreamSession : IDisposable
     private readonly string _serverName;
     private readonly IPAddress? _clientAddress;
     private readonly ServerOptions _options;
-
-    // Dashboard commands are enqueued from dashboard connection threads and drained on the control
-    // read loop (see DrainCommands / ControlServer) so session start/stop stays single-threaded.
-    private readonly ConcurrentQueue<Action> _commands = new();
 
     private SessionState _state = SessionState.AwaitingHello;
     private string _clientId = "";
@@ -76,9 +71,7 @@ public sealed class StreamSession : IDisposable
     private volatile bool _streaming;
     private volatile bool _audioStreaming;
 
-    // Quality / authoritative streamed dimensions (PROTOCOL.md §2.3).
-    private string _quality = "native";
-    // Per-stream codec negotiation (PROTOCOL.md §2.3): what the client offered in
+    // Per-stream codec negotiation: what the client offered in
     // START_STREAM, and whether this stream repairs loss with intra refresh.
     private bool _clientAcceptsHevc;
     private bool _clientAcceptsRefresh;
@@ -175,16 +168,6 @@ public sealed class StreamSession : IDisposable
     public long LastClientStatsAgeMs => _lastClientStatsAtMs <= 0 ? long.MaxValue : NowMs() - _lastClientStatsAtMs;
     private long _lastClientStatsAtMs;
 
-    // Surfaced to the web dashboard.
-    public string ClientName => _clientName;
-    public string? ClientIp => _clientAddress?.ToString();
-    public string Quality => _quality;
-    public int StreamWidth => _streamWidth;
-    public int StreamHeight => _streamHeight;
-    public string EncoderBackend => _encoder?.BackendName ?? "";
-
-    /// <summary>The pending pairing PIN while awaiting a PAIR_CODE, otherwise null.</summary>
-    public string? PendingPin => _state == SessionState.AwaitingPairCode ? _pin : null;
     public long EncodedFrames => Interlocked.Read(ref _encodedFrames);
     public long CaptureSubmittedFrames => Interlocked.Read(ref _captureSubmittedFrames);
     public long IdrRequestTotal => Interlocked.Read(ref _idrRequestTotal);
@@ -222,8 +205,8 @@ public sealed class StreamSession : IDisposable
     }
 
     /// <summary>
-    /// True for a second-client connection that declared role=controller in HELLO
-    /// (PROTOCOL.md §2.1): it authenticates like any other client and injects input, but it
+    /// True for a second-client connection that declared role=controller in HELLO:
+    /// it authenticates like any other client and injects input, but it
     /// never owns the capture pipeline — START_STREAM from it is ignored at the root.
     /// </summary>
     public bool IsController { get; }
@@ -266,7 +249,7 @@ public sealed class StreamSession : IDisposable
             case "REQUEST_IDR": OnRequestIdr(); break;
             case "REQUEST_REFRESH": OnRequestRefresh(); break;
             case "STATS": OnStats(payload); break;
-            default: /* Unknown types MUST be ignored (PROTOCOL.md §2). */ break;
+            default: /* Unknown types MUST be ignored. */ break;
         }
     }
 
@@ -358,14 +341,14 @@ public sealed class StreamSession : IDisposable
 
     private void OnStartStream(ReadOnlySpan<byte> payload)
     {
-        // A controller-role connection (§2.1) has no capture pipeline: its session stays in
+        // A controller-role connection has no capture pipeline: its session stays in
         // Ready forever, and any START_STREAM it (or a buggy client) sends is ignored at the
         // root so a second pipeline can never fight the viewer session for DXGI/audio.
         if (IsController)
             return;
 
         // Idempotent restart: the client may re-send START_STREAM (e.g. returning to the
-        // foreground) without waiting for STREAM_STOPPED (PROTOCOL.md §5).
+        // foreground) without waiting for STREAM_STOPPED.
         if (_state == SessionState.Streaming)
         {
             StopPipeline();
@@ -378,9 +361,6 @@ public sealed class StreamSession : IDisposable
         var msg = Json.Deserialize<StartStreamMessage>(payload);
         _maxBitrateKbps = _options.ClampClientBitrateKbps(msg?.MaxBitrateKbps ?? 0);
         Fps = msg is { Fps: >= 15 and <= 240 } ? msg.Fps : 60;
-        // Quality is fixed per stream: honor an explicit "720p"/"native", but fall back to the
-        // server-wide default when the client sends no quality field (old v0.4.0 clients).
-        _quality = ResolveRequestedQuality(msg?.Quality);
         _clientAcceptsHevc = msg?.Codecs?.Any(c => string.Equals(c, "hevc", StringComparison.OrdinalIgnoreCase)) == true;
         _clientAcceptsRefresh = msg?.Recovery?.Any(r => string.Equals(r, "refresh", StringComparison.OrdinalIgnoreCase)) == true;
         // Tells "the TV never offered HEVC" apart from "NVENC could not start HEVC" in the log.
@@ -392,10 +372,7 @@ public sealed class StreamSession : IDisposable
         BeginStream();
     }
 
-    /// <summary>
-    /// Starts the pipeline for the already-selected parameters and reports STREAM_STARTED. Shared
-    /// by client START_STREAM and the dashboard Restart command so both paths behave identically.
-    /// </summary>
+    /// <summary>Starts the pipeline for the already-selected parameters and reports STREAM_STARTED.</summary>
     private void BeginStream()
     {
         try
@@ -404,7 +381,7 @@ public sealed class StreamSession : IDisposable
             // pre-start line intentionally omits them (they were previously logged as 0x0 on the
             // very first start, before any duplicator existed). The post-start line below reports
             // the authoritative resolved dimensions.
-            AsyncLogger.Info($"[session] Stream starting: {_quality}@{Fps}, max bitrate {_maxBitrateKbps} kbps");
+            AsyncLogger.Info($"[session] Stream starting: {Fps} fps, max bitrate {_maxBitrateKbps} kbps");
             StartPipeline();
             _send(OutgoingMessages.StreamStarted(
                 _sender!.Port,
@@ -417,7 +394,7 @@ public sealed class StreamSession : IDisposable
                 _clockBaseUs));
             _state = SessionState.Streaming;
             Console.WriteLine($"[session] streaming started: {_streamWidth}x{_streamHeight}@{Fps} " +
-                              $"({_quality}, {_encoder.Codec}, {(_refreshRecovery ? "refresh" : "idr")} recovery), start bitrate {_currentBitrateKbps} kbps, media port {_sender.Port}.");
+                              $"({_encoder.Codec}, {(_refreshRecovery ? "refresh" : "idr")} recovery), start bitrate {_currentBitrateKbps} kbps, media port {_sender.Port}.");
             AsyncLogger.Info($"[session] Stream successfully started on media port {_sender.Port}. Encoder: {_encoder.BackendName}, codec: {_encoder.Codec}, recovery: {(_refreshRecovery ? "refresh" : "idr")}, {_streamWidth}x{_streamHeight}@{Fps}");
         }
         catch (EncoderUnavailableException ex)
@@ -443,30 +420,6 @@ public sealed class StreamSession : IDisposable
         }
     }
 
-    private string ResolveRequestedQuality(string? requested) =>
-        requested != null ? ServerOptions.Normalize(requested) : ServerOptions.Normalize(_options.DefaultQuality);
-
-    /// <summary>
-    /// Resolves the authoritative streamed dimensions from the quality setting (PROTOCOL.md §2.3).
-    /// "native" streams the source unchanged; "720p" downscales to 720 lines preserving aspect
-    /// ratio, rounding the width to the nearest even value, never upscaling, minimum 2. NV12
-    /// requires even dimensions.
-    /// </summary>
-    private (int width, int height) ResolveStreamSize(int srcWidth, int srcHeight)
-    {
-        if (_quality != "720p" || srcHeight <= 0 || srcWidth <= 0)
-            return (srcWidth, srcHeight);
-
-        int h = Math.Min(720, srcHeight);
-        double exact = (double)h * srcWidth / srcHeight;
-        int w = (int)(Math.Round(exact / 2.0, MidpointRounding.AwayFromZero) * 2); // round to nearest even
-        h &= ~1;                                    // even
-        if (w < 2) w = 2;
-        if (h < 2) h = 2;
-        if (w > srcWidth) w = srcWidth & ~1;        // clamp <= source; never upscale
-        return (w, h);
-    }
-
     private void OnStopStream()
     {
         if (!_streaming)
@@ -476,39 +429,6 @@ public sealed class StreamSession : IDisposable
         _state = SessionState.Ready;
         Console.WriteLine("[session] streaming stopped.");
         AsyncLogger.Info("[session] Streaming stopped by client.");
-    }
-
-    // ---- Dashboard commands (marshalled onto the control read loop) -----------------------
-
-    /// <summary>Queues a Restart-stream request from the web dashboard (any thread).</summary>
-    public void RequestRestart() => _commands.Enqueue(DashboardRestart);
-
-    /// <summary>
-    /// Drains queued dashboard commands. MUST be called only from the control read loop so that
-    /// pipeline start/stop stays serialized with control-message handling.
-    /// </summary>
-    public void DrainCommands()
-    {
-        while (_commands.TryDequeue(out var command))
-        {
-            try { command(); }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[dashboard] command failed: {ex.Message}");
-                AsyncLogger.Error($"[dashboard] Command failed: {ex.Message}");
-            }
-        }
-    }
-
-    private void DashboardRestart()
-    {
-        if (!_streaming)
-            return; // nothing to restart; the dashboard only offers Restart while streaming
-        StopPipeline();
-        _state = SessionState.Ready;
-        BeginStream(); // reuses the current bitrate cap, fps, and quality
-        Console.WriteLine("[session] streaming restarted from dashboard.");
-        AsyncLogger.Info("[session] Streaming restarted from dashboard command.");
     }
 
     private void OnAudioStart()
@@ -531,7 +451,7 @@ public sealed class StreamSession : IDisposable
 
         try
         {
-            _audioSender = new AudioSender(_options.AudioPort, _clientAddress);
+            _audioSender = new AudioSender(Ports.PreferredAudio, _clientAddress);
             _audioSender.Start();
             _audioCapture = new SystemAudioCapture(CurrentStreamPtsMs);
             _audioCapture.DataAvailable += OnAudioData;
@@ -702,7 +622,7 @@ public sealed class StreamSession : IDisposable
         }
     }
 
-    /// <summary>Control-channel mouse motion (PROTOCOL.md §2.3): the controller-role path,
+    /// <summary>Control-channel mouse motion: the controller-role path,
     /// which never learned the media endpoint the UDP DSMI datagrams require. Same
     /// managers, same sequence spaces, same guards as the UDP path via [OnMouseMotion].</summary>
     private void OnMouseMotionMessage(ReadOnlySpan<byte> payload)
@@ -719,7 +639,7 @@ public sealed class StreamSession : IDisposable
             message.HWheel, message.VWheel));
     }
 
-    /// <summary>Unicode text burst (PROTOCOL.md §2.4) — phone-IME output with no HID usage
+    /// <summary>Unicode text burst — phone-IME output with no HID usage
     /// (kana, kanji, emoji), injected by the keyboard manager as KEYEVENTF_UNICODE.</summary>
     private void OnKeyboardText(ReadOnlySpan<byte> payload)
     {
@@ -746,14 +666,14 @@ public sealed class StreamSession : IDisposable
 
     private void StartPipeline()
     {
-        _sender = new MediaSender(_options.MediaPort, _clientAddress);
+        _sender = new MediaSender(Ports.PreferredMedia, _clientAddress);
         _sender.OnGamepadState = OnGamepadState;
         _sender.OnMouseMotion = OnMouseMotion;
         _sender.OnClientConnected = OnMediaClientConnected;
         _sender.Start();
 
         _duplicator = new DesktopDuplicator();
-        (_streamWidth, _streamHeight) = ResolveStreamSize(_duplicator.Width, _duplicator.Height);
+        (_streamWidth, _streamHeight) = (_duplicator.Width, _duplicator.Height);
         _converter = new Nv12Converter(
             _duplicator.Device,
             _duplicator.Width,
@@ -764,7 +684,7 @@ public sealed class StreamSession : IDisposable
 
         // Games/movies: start high so first-frame quality does not need 2-3 probe rounds
         // to look right; clean-path probes then close half the gap to the cap per step.
-        _currentBitrateKbps = Math.Min(16000, _maxBitrateKbps); // start bitrate (PROTOCOL.md §4)
+        _currentBitrateKbps = Math.Min(16000, _maxBitrateKbps); // start bitrate
         _encoder = EncoderFactory.Create(
             _duplicator.Device,
             _streamWidth,
@@ -835,13 +755,13 @@ public sealed class StreamSession : IDisposable
     }
 
     /// <summary>
-    /// Host-cursor mirror (PROTOCOL.md §5 DSMC): DXGI frames never contain the pointer, and
+    /// Host-cursor mirror (DSMC): DXGI frames never contain the pointer, and
     /// DSMC used to answer only this session's own DSMI motion — so a controller-role
-    /// session (a separate session with no media sender), the phone pad before its first
-    /// packet, or the PC's physical mouse moved the real pointer while the viewer's overlay
-    /// stayed hidden or frozen. Polling the actual cursor and sending DSMC on change covers
-    /// every input source; the periodic resend repairs a lost datagram. Deliberately a
-    /// separate thread so the tuned capture loop stays untouched.
+    /// session (a separate session with no media sender) or the PC's physical mouse moved
+    /// the real pointer while the viewer's overlay stayed hidden or frozen. Polling the actual
+    /// cursor and sending DSMC on change covers every input source; the periodic resend
+    /// repairs a lost datagram. Deliberately a separate thread so the tuned capture loop
+    /// stays untouched.
     /// </summary>
     private void CursorWatchLoop(CancellationToken ct)
     {
@@ -1137,7 +1057,7 @@ public sealed class StreamSession : IDisposable
         StopKeyboard();
     }
 
-    // ---- Adaptation controller (PROTOCOL.md §4) -------------------------------------------
+    // ---- Adaptation controller -------------------------------------------
 
     private void OnRequestIdr()
     {
@@ -1167,7 +1087,7 @@ public sealed class StreamSession : IDisposable
     }
 
     /// <summary>
-    /// Loss repair on a refresh-capable stream (PROTOCOL.md §2.3): the client kept decoding
+    /// Loss repair on a refresh-capable stream: the client kept decoding
     /// across the gap, so one gradual intra-refresh wave heals it without the IDR-sized burst
     /// and the post-IDR blur. Congestion is still judged from STATS framesDropped, which the
     /// client counts for every skipped frame. A stream that did not negotiate refresh treats

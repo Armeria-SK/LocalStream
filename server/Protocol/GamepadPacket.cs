@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace LocalStream.Server.Protocol;
 
-/// <summary>One complete Android gamepad state snapshot (PROTOCOL.md §3B).</summary>
+/// <summary>One complete Android gamepad state snapshot.</summary>
 public readonly record struct GamepadState(
     byte ControllerId,
     ushort Buttons,

@@ -1,8 +1,6 @@
 # LocalStream — Android client
 
-Kotlin client for the LocalStream low-latency LAN screen streamer. Implements the wire
-contract in [`../docs/PROTOCOL.md`](../docs/PROTOCOL.md) (normative); design rationale in
-[`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+Kotlin client for the LocalStream low-latency LAN screen streamer.
 
 ## Building
 
@@ -31,57 +29,58 @@ and video latency still needs validation against a Windows host.
    your PC"); `PAIR_OK` persists the token; `HELLO_OK` launches the stream screen.
 3. **StreamActivity** (fullscreen, landscape, keep-screen-on) sends `START_STREAM` once the
    surface exists, opens the UDP media socket on `STREAM_STARTED`, hole-punches with `DSMH`
-   datagrams until video flows, and feeds reassembled H.264 access units to a MediaCodec
-   async decoder rendering straight to the SurfaceView. It then negotiates system audio on
+   datagrams until video flows, and feeds reassembled HEVC or H.264 access units (whichever
+   the PC negotiated) to a MediaCodec async decoder rendering straight to the SurfaceView. It then negotiates system audio on
    a separate UDP socket, hole-punches with `DSAH`, and writes fixed 5 ms PCM blocks to a
    low-latency AudioTrack. Tap the LIVE status chip for detailed video/network/audio/latency
    diagnostics; the audio button locally mutes without stopping reception. Back opens an
    explicit Leave action (and only restores controls while clean-screen mode is active);
-   backgrounding sends `STOP_STREAM` but keeps the control socket (protocol §5), then sends
+   backgrounding sends `STOP_STREAM` but keeps the control socket, then sends
    `START_STREAM` again on return.
 4. A connected Bluetooth/USB gamepad is detected automatically. Buttons, D-pad, sticks,
    analog triggers, hot-plug events, and up to four controller slots are forwarded to the
    PC over UDP. The PC exposes Xbox 360 controllers and returns rumble to Android.
-5. Touch input is negotiated after video starts. The compact top-right **Mouse** pill expands
-   Enable/Disable, **Touchpad**/**Direct**, **Left**, and **Right** actions for five seconds.
-   A single surface tap only positions/moves; double-tap = left-click, double-tap + move = drag,
-   two-finger move = scroll, and a short stationary two-finger tap = right-click. Mouse buttons
-   are reset whenever the stream stops or the app backgrounds.
-6. The toolbar selects Native (20 Mbps ceiling) / 720p (10 Mbps ceiling) quality, saves a
-   local screenshot, and offers **Hide** for a video-only clean screen. Hold three fingers for
-   600 ms, press Back, or press F11 on a hardware keyboard to restore every control without
-   sending an accidental mouse click to the PC.
+5. Touch input is negotiated after video starts and always moves the PC pointer relatively,
+   like a touchpad. The compact top-right **Mouse** pill expands Enable/Disable, **Left**, and
+   **Right** actions for five seconds. A single surface tap only moves; double-tap = left-click,
+   double-tap + move = drag, two-finger move = scroll, and a short stationary two-finger tap =
+   right-click. Mouse buttons are reset whenever the stream stops or the app backgrounds.
+6. The stream always runs at the PC's native resolution with a 50 Mbps bitrate ceiling (the
+   server's `--max-bitrate-kbps` can lower it). The toolbar offers **Hide** for a video-only
+   clean screen: hold three fingers for 600 ms, press Back, or press F11 on a hardware
+   keyboard to restore every control without sending an accidental mouse click to the PC.
 
 ## Code map
 
 ```
 app/src/main/java/com/localstream/client/
-  ui/MainActivity.kt      discovery + connect + pairing UI, role dialog on BUSY (§2.1)
+  ui/MainActivity.kt      discovery + connect + pairing UI, role dialog on BUSY
   ui/StreamActivity.kt    fullscreen video, aspect-ratio letterboxing, stats overlay
   ui/ControllerActivity.kt
                           second-device controller role: laptop-style trackpad (tap to
                           click, natural 2-finger scroll with glide, pinch zoom as
-                          Ctrl + wheel, left/right click zones) + text composer whose edits become PC-side keyboard
-                          input (§2.1)
+                          Ctrl + wheel, left/right click zones) + text composer whose
+                          edits become PC-side keyboard input
   ui/ServerAdapter.kt     discovered-server list
-  net/DiscoveryClient.kt  UDP broadcast DSPROBE1 / DSREPLY parsing (§1)
+  net/DiscoveryClient.kt  UDP broadcast DSPROBE1 / DSREPLY parsing
   net/ControlClient.kt    process-wide control channel singleton: length-prefixed JSON,
                           PING keepalive, 6 s silence watchdog, reconnect backoff,
-                          state machine per §5
+                          connection state machine
   net/MediaReceiver.kt    dedicated UDP receive thread, 20-byte header parse (big-endian),
                           20 ms bounded reorder repair, XOR-FEC recovery, DSMH hole punch,
                           decoded/assembled 1 s STATS
   net/BufferPool.kt       size-bucketed byte[] pool for frame assembly buffers
-  video/VideoDecoder.kt   MediaCodec video/avc async mode → Surface, KEY_LOW_LATENCY when
-                          supported, hardware/FPS validation, 4.9 MiB AU capacity, serial
-                          lifecycle, and a six-frame bounded producer queue
+  video/VideoDecoder.kt   MediaCodec video/hevc or video/avc async mode → Surface,
+                          KEY_LOW_LATENCY when supported, hardware/FPS validation, 4.9 MiB
+                          AU capacity, serial lifecycle, and a six-frame bounded producer
+                          queue
   audio/AudioReceiver.kt  DSAH audio UDP receiver, sequence-gap handling, immediate
                           non-blocking AudioTrack playback, local mute + audio stats
   input/GamepadForwarder.kt
                           physical controller detection/mapping, 120 Hz newest-state sender,
                           hot-plug neutralization and rumble
   input/RemoteMouseController.kt
-                          touchpad/direct gestures (plus the controller screen's trackpad
+                          touchpad gestures (plus the controller screen's trackpad
                           profile), 120 Hz motion coalescing, safe reset
   proto/Messages.kt       control JSON models (org.json)
   proto/MediaPacket.kt    allocation-free reusable media-header parser
@@ -108,7 +107,7 @@ app/src/main/java/com/localstream/client/
   to a non-empty token clears it and re-pairs automatically.
 - A second device connecting while the screen output is busy gets a role dialog: continue as
   a touchpad & keyboard controller (own screen, phone keyboard types at the PC's focused
-  caret), or back out — the stream is never taken over (§2.1).
+  caret), or back out — the stream is never taken over.
 - Audio is optional and backward-compatible. If an older server ignores `AUDIO_START`, the
   stream screen reports that no audio reply arrived while video continues normally.
 - Gamepad forwarding is also optional and requires ViGEmBus 1.22 on Windows. Connect the

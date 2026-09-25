@@ -1,6 +1,6 @@
 package com.localstream.client.proto
 
-/** Fixed-size complete controller snapshot from docs/PROTOCOL.md §3B. */
+/** Fixed-size complete controller snapshot. */
 object GamepadPacket {
     const val SIZE = 24
     const val VERSION = 1
