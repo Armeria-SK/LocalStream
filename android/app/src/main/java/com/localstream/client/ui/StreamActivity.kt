@@ -523,7 +523,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 MAX_BITRATE_KBPS,
                 TARGET_FPS,
                 codecs = offeredCodecs,
-                recovery = listOf("refresh")
+                recovery = listOf("refresh"),
+                fec = listOf("adaptive")
             )
         }
     }

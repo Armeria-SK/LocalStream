@@ -52,14 +52,17 @@ object ClientMessages {
     /**
      * [codecs] lists the codecs this device decodes in hardware, in preference order
      * ("hevc", "h264"); [recovery] the loss-recovery modes it implements ("refresh" = keeps
-     * decoding across a lost frame and sends REQUEST_REFRESH). Both are optional on the wire:
-     * a server that ignores them streams H.264 with IDR recovery, as before.
+     * decoding across a lost frame and sends REQUEST_REFRESH); [fec] the FEC layouts it
+     * reassembles ("adaptive" = any parity-group count up to packetCount, used as the
+     * interleave width). All are optional on the wire: a server that ignores them streams
+     * H.264 with IDR recovery and four parity groups, as before.
      */
     fun startStream(
         maxBitrateKbps: Int,
         fps: Int,
         codecs: List<String> = listOf("h264"),
-        recovery: List<String> = emptyList()
+        recovery: List<String> = emptyList(),
+        fec: List<String> = emptyList()
     ): String =
         JSONObject().apply {
             put("type", "START_STREAM")
@@ -67,6 +70,7 @@ object ClientMessages {
             put("fps", fps)
             put("codecs", JSONArray(codecs))
             put("recovery", JSONArray(recovery))
+            put("fec", JSONArray(fec))
         }.toString()
 
     fun mediaReady(port: Int): String =

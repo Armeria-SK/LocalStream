@@ -256,6 +256,49 @@ class FrameAssemblerTest {
     }
 
     @Test
+    fun adaptiveFec_usesHeaderWidth_andRecoversMatchingBurst() {
+        var completedLength = 0
+        val assembler = FrameAssembler(
+            bufferPool = BufferPool(),
+            onFrameComplete = { _, length, _, _, _, _ -> completedLength = length },
+            onFrameDropped = { _, _ -> }
+        )
+        // An adaptive-FEC server sends 6 parity groups for 20 packets, so the interleave width
+        // is 6: a 6-packet burst lands in 6 different groups and is fully recoverable.
+        val packetCount = 20
+        val fecCount = 6
+        val payloads = Array(packetCount) { index ->
+            ByteArray(if (index == packetCount - 1) 16 else 1200) { (index * 7 + 1).toByte() }
+        }
+        val lost = 5..10
+        for (index in 0 until packetCount) {
+            if (index in lost) continue
+            assembler.accept(
+                packet(80, index, packetCount, keyframe = true, payload = payloads[index], fecCount = fecCount),
+                nowMs = 0
+            )
+        }
+        for (group in 0 until fecCount) {
+            val parity = ByteArray(1200)
+            var index = group
+            while (index < packetCount) {
+                val member = payloads[index]
+                for (offset in member.indices) {
+                    parity[offset] = (parity[offset].toInt() xor member[offset].toInt()).toByte()
+                }
+                index += fecCount
+            }
+            assembler.accept(
+                packet(80, group, packetCount, keyframe = true, fec = true, payload = parity, fecCount = fecCount),
+                nowMs = 1
+            )
+        }
+
+        assertEquals(19 * 1200 + 16, completedLength)
+        assertEquals(6, assembler.consumeFecRecoveredPackets())
+    }
+
+    @Test
     fun frameIds_continueAcrossUint32Wrap() {
         val completed = mutableListOf<Long>()
         val assembler = assembler(completed) { }
@@ -384,7 +427,8 @@ class FrameAssemblerTest {
         packetCount: Int,
         keyframe: Boolean = false,
         fec: Boolean = false,
-        payload: ByteArray? = null
+        payload: ByteArray? = null,
+        fecCount: Int = minOf(4, packetCount)
     ): EncodedPacket {
         val payloadLength = payload?.size ?: if (fec || packetIndex < packetCount - 1) 1200 else 16
         val bytes = ByteArray(MediaPacketHeader.HEADER_SIZE + payloadLength)
@@ -394,7 +438,7 @@ class FrameAssemblerTest {
         putU32(bytes, 4, frameId)
         putU16(bytes, 8, packetIndex)
         putU16(bytes, 10, packetCount)
-        putU16(bytes, 12, minOf(4, packetCount))
+        putU16(bytes, 12, fecCount)
         putU32(bytes, 14, frameId * 16)
         putU16(bytes, 18, 2)
         if (payload != null) {

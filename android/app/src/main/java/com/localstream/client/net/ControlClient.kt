@@ -170,10 +170,11 @@ object ControlClient {
         maxBitrateKbps: Int = 50000,
         fps: Int = 60,
         codecs: List<String> = listOf("h264"),
-        recovery: List<String> = emptyList()
+        recovery: List<String> = emptyList(),
+        fec: List<String> = emptyList()
     ) {
         scope.launch {
-            writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, codecs, recovery))
+            writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, codecs, recovery, fec))
         }
     }
 
