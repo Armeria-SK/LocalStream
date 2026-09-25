@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Controller-role screen (§2.1): text composer on top (tap → phone keyboard → PC caret),
-     touchpad in the middle, mouse buttons and two essential keys along the bottom. -->
+<!-- Controller-role screen (§2.1): text composer with Enter/Backspace on top (tap → phone
+     keyboard → PC caret), then a laptop-style trackpad whose bottom strip is split into
+     left/right click zones that hold the button for as long as they are pressed. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -16,73 +17,38 @@
         android:textColor="@color/text_secondary_dark"
         android:textSize="13sp" />
 
-    <EditText
-        android:id="@+id/etRemoteText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:background="@color/surface_dark"
-        android:hint="@string/controller_text_hint"
-        android:imeOptions="actionSend"
-        android:importantForAutofill="no"
-        android:inputType="text"
-        android:padding="12dp"
-        android:singleLine="true"
-        android:textColor="@color/text_primary_dark"
-        android:textColorHint="@color/text_secondary_dark"
-        android:textSize="16sp" />
-
-    <TextView
-        android:id="@+id/touchpad"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="12dp"
-        android:layout_weight="1"
-        android:background="@color/surface_dark"
-        android:gravity="center"
-        android:padding="8dp"
-        android:text="@string/controller_touchpad_hint"
-        android:textColor="@color/text_secondary_dark"
-        android:textSize="14sp" />
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
+        android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnLeftClick"
-            style="@style/Widget.LocalStream.ToolbarButton"
+        <EditText
+            android:id="@+id/etRemoteText"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="4dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:minWidth="0dp"
-            android:text="@string/mouse_left"
+            android:background="@color/surface_dark"
+            android:hint="@string/controller_text_hint"
+            android:imeOptions="actionSend"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:padding="12dp"
+            android:singleLine="true"
             android:textColor="@color/text_primary_dark"
-            android:textSize="13sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRightClick"
-            style="@style/Widget.LocalStream.ToolbarButton"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="4dp"
-            android:layout_weight="1"
-            android:minWidth="0dp"
-            android:text="@string/mouse_right"
-            android:textColor="@color/text_primary_dark"
-            android:textSize="13sp" />
+            android:textColorHint="@color/text_secondary_dark"
+            android:textSize="16sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnEnter"
             style="@style/Widget.LocalStream.ToolbarButton"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="48dp"
-            android:layout_marginEnd="4dp"
-            android:layout_weight="1"
+            android:layout_marginStart="4dp"
             android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="@string/controller_key_enter"
             android:textColor="@color/text_primary_dark"
             android:textSize="13sp" />
@@ -90,12 +56,66 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBackspace"
             style="@style/Widget.LocalStream.ToolbarButton"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="48dp"
-            android:layout_weight="1"
             android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="@string/controller_key_backspace"
             android:textColor="@color/text_primary_dark"
             android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/trackpadFrame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_trackpad"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/touchpad"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:padding="16dp"
+            android:text="@string/controller_touchpad_hint"
+            android:textColor="@color/text_secondary_dark"
+            android:textSize="13sp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/divider_dark" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="96dp"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/zoneLeftClick"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_click_zone"
+                android:contentDescription="@string/mouse_left_click_description" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:background="@color/divider_dark" />
+
+            <View
+                android:id="@+id/zoneRightClick"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_click_zone"
+                android:contentDescription="@string/mouse_right_click_description" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

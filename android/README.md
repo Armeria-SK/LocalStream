@@ -59,8 +59,10 @@ app/src/main/java/com/localstream/client/
   ui/MainActivity.kt      discovery + connect + pairing UI, role dialog on BUSY (§2.1)
   ui/StreamActivity.kt    fullscreen video, aspect-ratio letterboxing, stats overlay
   ui/ControllerActivity.kt
-                          second-device controller role: touchpad + text composer whose
-                          edits become PC-side keyboard input (§2.1)
+                          second-device controller role: laptop-style trackpad (tap to
+                          click, natural 2-finger scroll with glide, pinch zoom as
+                          Ctrl + wheel, left/right click zones) + text composer whose edits become PC-side keyboard
+                          input (§2.1)
   ui/ServerAdapter.kt     discovered-server list
   net/DiscoveryClient.kt  UDP broadcast DSPROBE1 / DSREPLY parsing (§1)
   net/ControlClient.kt    process-wide control channel singleton: length-prefixed JSON,
@@ -79,7 +81,8 @@ app/src/main/java/com/localstream/client/
                           physical controller detection/mapping, 120 Hz newest-state sender,
                           hot-plug neutralization and rumble
   input/RemoteMouseController.kt
-                          touchpad/direct gestures, 120 Hz motion coalescing, safe reset
+                          touchpad/direct gestures (plus the controller screen's trackpad
+                          profile), 120 Hz motion coalescing, safe reset
   proto/Messages.kt       control JSON models (org.json)
   proto/MediaPacket.kt    allocation-free reusable media-header parser
   proto/AudioPacket.kt    allocation-free reusable audio-header parser

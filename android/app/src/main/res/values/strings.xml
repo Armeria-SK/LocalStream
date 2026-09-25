@@ -91,7 +91,8 @@
     <string name="controller_status_live">Mouse and keyboard live</string>
     <string name="controller_status_input_off">Input unavailable: %1$s</string>
     <string name="controller_text_hint">Tap to type on the PC</string>
-    <string name="controller_touchpad_hint">Touchpad · move: 1 finger · click: double-tap · scroll: 2 fingers</string>
+    <string name="controller_touchpad_hint">Tap: click · Tap then drag: drag
+2-finger tap: right-click · 2-finger swipe: scroll · Pinch: zoom</string>
     <string name="controller_key_enter">Enter</string>
     <string name="controller_key_backspace">⌫</string>
 </resources>
