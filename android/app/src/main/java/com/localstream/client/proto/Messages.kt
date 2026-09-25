@@ -91,16 +91,9 @@ object ClientMessages {
             put("type", "AUDIO_START")
         }.toString()
 
-    fun startMouseInput(): String =
-        JSONObject().apply {
-            put("type", "INPUT_START")
-            put("mouse", true)
-        }.toString()
-
     /**
-     * Controller-role input negotiation: unlike [startMouseInput] this enables the
-     * keyboard too, because a controller session never streams and therefore has no
-     * STREAM_STARTED to piggyback the usual input start on.
+     * Input negotiation for both roles. The keyboard carries the controller's typing and
+     * the Ctrl taps that turn a trackpad pinch into zoom.
      */
     fun startMouseKeyboardInput(): String =
         JSONObject().apply {

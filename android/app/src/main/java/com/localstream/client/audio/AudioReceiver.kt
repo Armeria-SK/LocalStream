@@ -38,7 +38,6 @@ class AudioReceiver(
     private val onStats: (AudioStats) -> Unit = {}
 ) {
     @Volatile private var running = false
-    @Volatile private var muted = false
     @Volatile private var socket: DatagramSocket? = null
     @Volatile private var audioTrack: AudioTrack? = null
     private var thread: Thread? = null
@@ -92,11 +91,6 @@ class AudioReceiver(
         ).apply { start() }
     }
 
-    fun setMuted(isMuted: Boolean) {
-        muted = isMuted
-        try { audioTrack?.setVolume(if (isMuted) 0f else 1f) } catch (_: Exception) { }
-    }
-
     fun stop() {
         running = false
         socket?.close()
@@ -129,7 +123,6 @@ class AudioReceiver(
             val playback = createAudioTrack(sampleRate, channels, payloadBytes)
             track = playback
             audioTrack = playback
-            playback.setVolume(if (muted) 0f else 1f)
             playback.play()
             var outputBufferMs = playback.bufferSizeInFrames * 1000 / sampleRate
             onState(
