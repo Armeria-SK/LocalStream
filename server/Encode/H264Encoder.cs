@@ -6,7 +6,7 @@ using Vortice.MediaFoundation;
 namespace LocalStream.Server.Encode;
 
 /// <summary>
-/// Hardware H.264 encoder over a Media Foundation async MFT (ARCHITECTURE.md pipeline).
+/// Hardware H.264 encoder over a Media Foundation async MFT.
 ///
 /// Design notes / Windows subtleties:
 ///  * Hardware encoder MFTs are ASYNC: you must set MF_TRANSFORM_ASYNC_UNLOCK, then drive
@@ -15,7 +15,7 @@ namespace LocalStream.Server.Encode;
 ///  * The NV12 surface is consumed on-GPU via an IMFDXGIDeviceManager (SET_D3D_MANAGER) and
 ///    an MFCreateDXGISurfaceBuffer-backed input sample — no CPU copy of raw frames.
 ///  * Single-frame pipeline: only the newest captured frame is kept pending; older pending
-///    input is dropped (PROTOCOL.md §3.3 / ARCHITECTURE.md "encoder busy -> skip stale").
+///    input is dropped ("encoder busy -> skip stale").
 ///  * SPS/PPS: we cache the parameter sets seen on the first IDR and prepend them to any IDR
 ///    access unit that lacks in-band SPS, guaranteeing every keyframe is self-contained.
 /// </summary>
@@ -244,13 +244,13 @@ public sealed class H264Encoder : IVideoEncoder
 
     // ---- Dynamic controls -----------------------------------------------------------------
 
-    /// <summary>Forces the next encoded frame to be an IDR. Caller rate-limits per PROTOCOL.md.</summary>
+    /// <summary>Forces the next encoded frame to be an IDR. The caller rate-limits requests.</summary>
     public void RequestIdr() => TrySetCodecU32(MfGuids.CODECAPI_AVEncVideoForceKeyFrame, 1);
 
     /// <summary>Media Foundation exposes no intra-refresh control; an IDR is the only repair.</summary>
     public void RequestRefresh() => RequestIdr();
 
-    /// <summary>Adjusts the CBR target mid-stream (adaptation controller, PROTOCOL.md §4).</summary>
+    /// <summary>Adjusts the CBR target mid-stream (adaptation controller).</summary>
     public bool SetBitrate(int kbps)
     {
         uint bitrate = checked((uint)((long)kbps * 1000));

@@ -15,13 +15,10 @@ import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
-enum class MouseMode { TOUCHPAD, DIRECT }
-
-/** Converts SurfaceView touch gestures into low-latency remote mouse input. */
+/** Converts touch gestures into low-latency relative (touchpad-style) remote mouse input. */
 class RemoteMouseController(
     private val target: View,
     private val sendMotion: (ByteArray) -> Unit,
-    private val onModeChanged: (MouseMode) -> Unit = {},
     /** The reveal path is captured only while clean screen is active, so ordinary three-finger
      * input cannot interfere with mouse/gamepad use while the controls are visible. */
     private val shouldHandleCleanScreenGesture: () -> Boolean = { false },
@@ -34,12 +31,11 @@ class RemoteMouseController(
     private val trackpad: Boolean = false,
     /** Trackpad only: presses (true) / releases (false) Ctrl on the PC. When set, a two-finger
      * pinch zooms the way a Windows precision touchpad does, as Ctrl + wheel notches. The
-     * caller sends the key because it owns the keyboard sequence space (PROTOCOL.md §2.4). */
+     * caller sends the key because it owns the keyboard sequence space. */
     private val zoomModifier: ((Boolean) -> Unit)? = null
 ) : View.OnTouchListener {
     private val packet = ByteArray(MousePacket.SIZE)
     private var enabled = false
-    private var mode = MouseMode.TOUCHPAD
     private var motionSequence = 0L
     private var buttonSequence = 0L
     private var lastX = 0f
@@ -125,16 +121,6 @@ class RemoteMouseController(
         if (!value) reset()
     }
 
-    fun toggleMode(): MouseMode {
-        mode = if (mode == MouseMode.TOUCHPAD) MouseMode.DIRECT else MouseMode.TOUCHPAD
-        clearPendingTap()
-        resetGestureOnly()
-        onModeChanged(mode)
-        return mode
-    }
-
-    fun currentMode(): MouseMode = mode
-
     fun clickLeft() {
         if (enabled) {
             clearPendingTap()
@@ -156,65 +142,6 @@ class RemoteMouseController(
     fun nudge(dxDp: Float, dyDp: Float) {
         if (!enabled) return
         sendRelative(dxDp * displayDensity, dyDp * displayDensity, force = true)
-    }
-
-    // ---- Phone touchpad API (PhoneControllerServer) --------------------------------------
-    // The phone is the controller while the TV only displays. Every call hops through this
-    // class (StreamActivity posts to the main thread) so phone packets share motionSequence
-    // /buttonSequence with TV-touch packets — the server's monotonicity check (PROTOCOL.md
-    // §5) accepts exactly one sequence space per direction.
-
-    /** Relative move from the phone touchpad, in dp. Phone pads track the finger like a
-     * laptop touchpad, so deltas skip the TV's fat-finger gain curve but reuse the same
-     * 120 Hz coalescer, packet builder and sequence counter as touch motion. */
-    fun phoneMove(dx: Float, dy: Float) {
-        if (!enabled) return
-        pendingDx += dx
-        pendingDy += dy
-        val now = SystemClock.elapsedRealtimeNanos()
-        if (now - lastMotionSentAtNanos < MIN_SEND_INTERVAL_NANOS) {
-            // Inside the 120 Hz window: this delta is only accumulated. The phone may send
-            // nothing more (finger stopped), so schedule a flush — otherwise the tail of every
-            // swipe and slow single-pixel moves sat unsent until the next gesture.
-            target.removeCallbacks(phoneMotionFlush)
-            target.postDelayed(phoneMotionFlush, PHONE_FLUSH_DELAY_MS)
-            return
-        }
-        flushPhoneMotion()
-    }
-
-    private val phoneMotionFlush = Runnable { if (enabled) flushPhoneMotion() }
-
-    private fun flushPhoneMotion() {
-        target.removeCallbacks(phoneMotionFlush)
-        val x = pendingDx.roundToInt()
-        val y = pendingDy.roundToInt()
-        pendingDx -= x
-        pendingDy -= y
-        if (x != 0 || y != 0) send(MousePacket.MODE_RELATIVE, x, y, 0, 0, force = true)
-    }
-
-    /** Two-finger swipe from the phone, in wheel units (same unit as TV-touch scroll). */
-    fun phoneScroll(wheelUnits: Int) {
-        if (!enabled || wheelUnits == 0) return
-        send(MousePacket.MODE_RELATIVE, 0, 0, 0, wheelUnits)
-    }
-
-    fun phoneClick(button: String) {
-        if (!enabled) return
-        clearPendingTap()
-        sendClick(button)
-    }
-
-    /** Press/release for phone drag gestures. Left joins [leftHeld] so [reset] still
-     * releases a held button if the stream dies mid-drag. */
-    fun phoneButton(button: String, down: Boolean) {
-        if (!enabled) return
-        if (button == "left") {
-            if (down == leftHeld) return
-            leftHeld = down
-        }
-        sendButton(button, down)
     }
 
     /**
@@ -310,7 +237,6 @@ class RemoteMouseController(
     }
 
     fun reset() {
-        target.removeCallbacks(phoneMotionFlush)
         stopFling()
         if (leftHeld) sendButton("left", false)
         leftHeld = false
@@ -417,7 +343,6 @@ class RemoteMouseController(
                 maxPointers = 1
                 scrollRemainder = 0f
                 twoFingerTravel = 0f
-                if (mode == MouseMode.DIRECT) sendAbsolute(event.x, event.y, view)
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -477,20 +402,14 @@ class RemoteMouseController(
                     if (trackpad && maxPointers > 1) {
                         // The finger left behind by a scroll or right-click tap must not nudge
                         // the cursor while the hand comes off the pad.
-                    } else if (mode == MouseMode.TOUCHPAD) {
+                    } else {
+                        // Movement alone never presses a button. A double-tap followed by a
+                        // move is the deliberate drag gesture.
                         if (!leftHeld && !zoneLeftHeld && moved && doubleTapInProgress) {
                             sendButton("left", true)
                             leftHeld = true
                         }
                         sendRelative(dx, dy)
-                    } else {
-                        // Movement alone never presses a button. A double-tap followed by a
-                        // move is the deliberate drag gesture in either pointer mode.
-                        if (!leftHeld && moved && doubleTapInProgress) {
-                            sendButton("left", true)
-                            leftHeld = true
-                        }
-                        sendAbsolute(event.x, event.y, view)
                     }
                     lastX = event.x
                     lastY = event.y
@@ -515,11 +434,7 @@ class RemoteMouseController(
                 // position before clearing the accumulators so short swipes do not stop
                 // short and the last part of a drag is not lost.
                 if (moved && maxPointers == 1) {
-                    if (mode == MouseMode.TOUCHPAD) {
-                        sendRelative(event.x - lastX, event.y - lastY, force = true)
-                    } else {
-                        sendAbsolute(event.x, event.y, view, force = true)
-                    }
+                    sendRelative(event.x - lastX, event.y - lastY, force = true)
                     lastX = event.x
                     lastY = event.y
                 }
@@ -538,7 +453,6 @@ class RemoteMouseController(
                     // neither a click nor the first half of a later double-tap.
                     clearPendingTap()
                 } else if (!moved && upAt - downAt <= MAX_TAP_DURATION_MS) {
-                    if (mode == MouseMode.DIRECT) sendAbsolute(event.x, event.y, view)
                     if (trackpad) {
                         // Tap-to-click, clicking at once: a second tap makes the double
                         // click, and remembering every tap lets tap-then-drag start a drag.
@@ -730,13 +644,6 @@ class RemoteMouseController(
         return true
     }
 
-    private fun sendAbsolute(x: Float, y: Float, view: View, force: Boolean = false) {
-        if (view.width <= 1 || view.height <= 1) return
-        val nx = (x / (view.width - 1) * 65535f).roundToInt().coerceIn(0, 65535)
-        val ny = (y / (view.height - 1) * 65535f).roundToInt().coerceIn(0, 65535)
-        send(MousePacket.MODE_ABSOLUTE, nx, ny, 0, 0, force = force)
-    }
-
     private fun send(
         mode: Int,
         x: Int,
@@ -835,8 +742,6 @@ class RemoteMouseController(
         private const val CLEAN_SCREEN_REVEAL_HOLD_MS = 600L
         private const val CLEAN_SCREEN_SLOP_MULTIPLIER = 2f
         private const val MIN_SEND_INTERVAL_NANOS = 1_000_000_000L / 120L
-        /** Just past one 120 Hz send window, so a flush never races the coalescer. */
-        private const val PHONE_FLUSH_DELAY_MS = 9L
         private const val INVALID_POINTER = -1
         private const val TWO_FINGER_UNDECIDED = 0
         private const val TWO_FINGER_SCROLL_VERTICAL = 1

@@ -1,7 +1,7 @@
 package com.localstream.client.proto
 
 /**
- * 20-byte media packet header, per docs/PROTOCOL.md §3:
+ * 20-byte media packet header:
  *
  * ```
  * offset  size  field

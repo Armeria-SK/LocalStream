@@ -12,11 +12,8 @@ public static class Autostart
 {
     private const string TaskName = "LocalStream";
 
-    /// <summary>
-    /// Creates the logon task. <paramref name="elevated"/> registers it to run at the highest
-    /// available privileges (needed to inject input into elevated apps / capture UAC surfaces).
-    /// </summary>
-    public static int InstallAutostart(bool elevated)
+    /// <summary>Creates the logon task, running at the user's normal (limited) privileges.</summary>
+    public static int InstallAutostart()
     {
         string exe = ExecutablePath();
         if (string.IsNullOrEmpty(exe))
@@ -32,7 +29,7 @@ public static class Autostart
             return 1;
         }
 
-        string runLevel = elevated ? "HIGHEST" : "LIMITED";
+        const string runLevel = "LIMITED";
         string action = $"\"{exe}\" --headless";
 
         int code = RunSchtasks(

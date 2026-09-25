@@ -1,7 +1,7 @@
 package com.localstream.client.net
 
 /**
- * Watches decode-to-surface latency around a refresh-recovery gap skip (§3.1).
+ * Watches decode-to-surface latency around a refresh-recovery gap skip.
  *
  * Some TV decoders (seen on a TCL/MediaTek set) conceal a skipped reference correctly but then
  * leave their low-latency output mode and keep 2-3 decoded pictures queued for the rest of the

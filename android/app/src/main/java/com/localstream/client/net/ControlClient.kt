@@ -32,12 +32,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Control channel: TCP 47801, length-prefixed JSON, per docs/PROTOCOL.md §2.
+ * Control channel: TCP 47801, length-prefixed JSON.
  *
  * Implemented as a process-lifetime singleton (not tied to any single Activity) because the
  * protocol explicitly requires the control socket to survive Activity transitions: it is
  * opened from MainActivity during discovery/pairing and then handed off to StreamActivity
- * for START_STREAM/STOP_STREAM, and per §5 must also survive the app being backgrounded
+ * for START_STREAM/STOP_STREAM, and must also survive the app being backgrounded
  * (StreamActivity.onStop) without disconnecting.
  */
 object ControlClient {
@@ -111,7 +111,7 @@ object ControlClient {
         }
     }
 
-    /** Session role per §2.1: `"viewer"` (screen output, the default) or `"controller"`
+    /** Session role: `"viewer"` (screen output, the default) or `"controller"`
      * (touchpad & keyboard for a second device). Set by [connect] and carried into every
      * HELLO of that connection's auto-reconnects; [disconnect] resets it so any later
      * fresh attempt is a viewer again. @Volatile because [connect] (main thread) and the
@@ -121,7 +121,7 @@ object ControlClient {
     val isController: Boolean get() = role == "controller"
 
     /** Starts a fresh connection attempt, tearing down any previous one first.
-     * [role] is the role declared in HELLO (§2.1); MainActivity passes `"controller"`
+     * [role] is the role declared in HELLO; MainActivity passes `"controller"`
      * when the user picks that role after a BUSY on the screen-output slot. */
     fun connect(ip: String, port: Int, role: String = "viewer") {
         this.role = role
@@ -168,12 +168,11 @@ object ControlClient {
     fun startStream(
         maxBitrateKbps: Int = 50000,
         fps: Int = 60,
-        quality: String = "native",
         codecs: List<String> = listOf("h264"),
         recovery: List<String> = emptyList()
     ) {
         scope.launch {
-            writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, quality, codecs, recovery))
+            writeFrame(ClientMessages.startStream(maxBitrateKbps, fps, codecs, recovery))
         }
     }
 
@@ -222,14 +221,14 @@ object ControlClient {
         mouseControlFrames.trySend(ClientMessages.mouseButton(firstSequence + 1, button, false))
     }
 
-    /** Controller-role input negotiation (§2.1): mouse + keyboard in one INPUT_START.
+    /** Controller-role input negotiation: mouse + keyboard in one INPUT_START.
      * Idempotent server-side, so callers may resend on every READY (re)entry — which is
      * what keeps input alive across a reconnect that created a brand-new server session. */
     fun startMouseKeyboardInput() {
         scope.launch { writeFrame(ClientMessages.startMouseKeyboardInput()) }
     }
 
-    /** Controller-role motion (§2.3): queued on the same FIFO as button frames so motion
+    /** Controller-role motion: queued on the same FIFO as button frames so motion
      * and clicks keep one arrival order on the wire. */
     fun sendMouseMotion(
         sequence: Long,
@@ -244,24 +243,24 @@ object ControlClient {
         )
     }
 
-    /** One HID key transition (§2.4); [sequence] must strictly increase across every
+    /** One HID key transition; [sequence] must strictly increase across every
      * keyboard message of the connection (keys and text bursts share one stream). */
     fun sendKeyboardKey(sequence: Long, usage: Int, down: Boolean) {
         mouseControlFrames.trySend(ClientMessages.keyboardKey(sequence, usage, down))
     }
 
-    /** Unicode text burst (§2.4) — phone-IME output with no HID key position. */
+    /** Unicode text burst — phone-IME output with no HID key position. */
     fun sendKeyboardText(sequence: Long, text: String) {
         if (text.isEmpty()) return
         mouseControlFrames.trySend(ClientMessages.keyboardText(sequence, text))
     }
 
-    /** §2.4: MUST be sent when the keyboard capture is released (Activity pause). */
+    /** MUST be sent when the keyboard capture is released (Activity pause). */
     fun sendKeyboardReset() {
         mouseControlFrames.trySend(ClientMessages.keyboardReset())
     }
 
-    /** Client-side rate limit (300 ms) on top of the server's own rate limit, per §2.3. */
+    /** Client-side rate limit (300 ms) on top of the server's own rate limit. */
     fun requestIdr() {
         val now = SystemClock.elapsedRealtime()
         val shouldSend = synchronized(idrGate) {
@@ -274,7 +273,7 @@ object ControlClient {
         if (shouldSend) scope.launch { writeFrame(ClientMessages.requestIdr()) }
     }
 
-    /** REQUEST_REFRESH (§2.3), rate-limited like [requestIdr] but on its own window: a
+    /** REQUEST_REFRESH, rate-limited like [requestIdr] but on its own window: a
      * refresh must never swallow a later hard IDR request (decoder restart), or vice versa. */
     fun requestRefresh() {
         val now = SystemClock.elapsedRealtime()
@@ -394,11 +393,11 @@ object ControlClient {
             }
             ServerMessage.PairRequired -> {
                 // If the server no longer recognizes a token we sent, drop it so the UI
-                // re-pairs cleanly instead of looping with a stale credential (§5).
+                // re-pairs cleanly instead of looping with a stale credential.
                 if (lastSentToken.isNotEmpty()) {
                     prefs.clearToken(serverIp)
                 }
-                // Initiate pairing right away (§2.2: on PAIR_REQUIRED the client sends
+                // Initiate pairing right away (on PAIR_REQUIRED the client sends
                 // PAIR_REQUEST; the server then shows the PIN). Done here, not in the UI, so
                 // the step can't be lost to Activity lifecycle timing -- the UI only needs to
                 // collect the PIN from the user.
@@ -408,7 +407,7 @@ object ControlClient {
             is ServerMessage.PairOk -> {
                 val existingName = prefs.getPairedServer()?.name ?: ""
                 prefs.savePairedServer(serverIp, msg.token, existingName)
-                // Per §2.2 the client sends HELLO again with the fresh token. Done here (not
+                // The client sends HELLO again with the fresh token. Done here (not
                 // in the UI) so the protocol step can't be lost to Activity lifecycle timing.
                 sendHello(msg.token)
             }

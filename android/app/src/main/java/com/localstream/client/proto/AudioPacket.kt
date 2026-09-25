@@ -1,7 +1,7 @@
 package com.localstream.client.proto
 
 /**
- * Reusable parser for the fixed audio datagram in docs/PROTOCOL.md §3A. It is mutable so
+ * Reusable parser for the fixed audio datagram. It is mutable so
  * the 200-packet/s receive loop does not allocate a data object for every 5 ms block.
  */
 class AudioPacketHeader {

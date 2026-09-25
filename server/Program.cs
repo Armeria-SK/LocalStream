@@ -8,7 +8,6 @@ using LocalStream.Server.Net;
 using LocalStream.Server.Protocol;
 using LocalStream.Server.Service;
 using LocalStream.Server.Session;
-using LocalStream.Server.Web;
 
 // ---- Flag parsing ------------------------------------------------------------------------
 
@@ -27,23 +26,14 @@ string? FlagValue(string flag)
 
 // Autostart management acts then exits immediately.
 if (HasFlag("--install-autostart"))
-    return Autostart.InstallAutostart(HasFlag("--elevated"));
+    return Autostart.InstallAutostart();
 if (HasFlag("--uninstall-autostart"))
     return Autostart.Uninstall();
 
 bool headless = HasFlag("--headless");
-bool noWeb = HasFlag("--no-web");
-bool webLan = HasFlag("--web-lan");
 
 string appLogPath = Path.Combine(AppContext.BaseDirectory, "localstream.app.log");
 AsyncLogger.Initialize(appLogPath);
-
-int webPort = 47810;
-if (FlagValue("--web-port") is { } portText && int.TryParse(portText, out int parsedPort)
-    && parsedPort is > 0 and < 65536)
-{
-    webPort = parsedPort;
-}
 
 int maxBitrateKbps = ServerOptions.DefaultMaxBitrateKbps;
 if (FlagValue("--max-bitrate-kbps") is { } bitrateText
@@ -52,33 +42,14 @@ if (FlagValue("--max-bitrate-kbps") is { } bitrateText
     maxBitrateKbps = parsedBitrate;
 }
 
-// Fixed media/audio UDP ports (defaults 47802/47803 per PROTOCOL.md). Bound at startup
-// with retries; see UdpPortBinder.
-int mediaPort = Ports.PreferredMedia;
-if (FlagValue("--media-port") is { } mediaText && int.TryParse(mediaText, out int parsedMedia)
-    && parsedMedia is > 0 and < 65536)
-{
-    mediaPort = parsedMedia;
-}
-
-int audioPort = Ports.PreferredAudio;
-if (FlagValue("--audio-port") is { } audioText && int.TryParse(audioText, out int parsedAudio)
-    && parsedAudio is > 0 and < 65536)
-{
-    audioPort = parsedAudio;
-}
-
 var options = new ServerOptions
 {
-    DefaultQuality = ServerOptions.Normalize(FlagValue("--quality")),
     MaxBitrateKbps = maxBitrateKbps,
-    MediaPort = mediaPort,
-    AudioPort = audioPort,
 };
 
 // In headless mode there is no interactive console (the logon task has no window). Redirect all
-// console output — including the pairing PIN box — to a log file next to the executable. The PIN
-// is also always available through the web dashboard.
+// console output — including the pairing PIN box — to a log file next to the executable, which
+// is where a headless user reads the PIN.
 if (headless)
 {
     // AppContext.BaseDirectory is the published executable's directory and also behaves
@@ -88,7 +59,7 @@ if (headless)
     string previousLogPath = Path.Combine(exeDir, "localstream.previous.log");
     // Keep at most the current and immediately previous session. Headless mode can run for
     // months, and the pairing PIN is sensitive enough that an unbounded append-only history is
-    // undesirable. The 1 Hz stats line is also suppressed below; the dashboard owns live stats.
+    // undesirable. The 1 Hz stats line is also suppressed below in favor of a 10 s summary.
     try
     {
         if (File.Exists(logPath))
@@ -131,17 +102,13 @@ AsyncLogger.Info($"LocalStream Server starting on host: {hostname}");
 foreach (var ip in listenIps)
 {
     Console.WriteLine($"  {ip}   (discovery UDP {Ports.Discovery}, control TCP {Ports.Control}, " +
-                      $"video UDP {mediaPort}, audio UDP {audioPort})");
-    AsyncLogger.Info($"Listening on: {ip} (discovery={Ports.Discovery}, control={Ports.Control}, video={mediaPort}, audio={audioPort})");
+                      $"video UDP {Ports.PreferredMedia}, audio UDP {Ports.PreferredAudio})");
+    AsyncLogger.Info($"Listening on: {ip} (discovery={Ports.Discovery}, control={Ports.Control}, video={Ports.PreferredMedia}, audio={Ports.PreferredAudio})");
 }
 Console.WriteLine();
-Console.WriteLine($"Default stream quality: {options.DefaultQuality}");
 Console.WriteLine($"Maximum stream bitrate: {options.MaxBitrateKbps} kbps");
-AsyncLogger.Info($"Default stream quality: {options.DefaultQuality}");
 AsyncLogger.Info($"Maximum stream bitrate: {options.MaxBitrateKbps} kbps");
 string firewallPorts = "UDP 47800/47802/47803 and TCP 47801";
-if (webLan && !noWeb)
-    firewallPorts += $" plus TCP {webPort} for the LAN dashboard";
 Console.WriteLine($"Firewall: allow {firewallPorts} on the Private network profile.");
 Console.WriteLine("Waiting for a client to connect...");
 Console.WriteLine();
@@ -152,11 +119,9 @@ var pairing = new PairingManager();
 
 using var discovery = new DiscoveryResponder(hostname);
 using var control = new ControlServer(pairing, hostname, options);
-using var web = noWeb ? null : new WebDashboard(control, options, hostname, listenIps, webLan, webPort);
 
 discovery.Start();
 control.Start();
-web?.Start();
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>

@@ -30,13 +30,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Media channel: UDP, server -> client, per docs/PROTOCOL.md §3.
+ * Media channel: UDP, server -> client.
  *
  * Owns a dedicated receive thread reading into a single preallocated 1500-byte buffer,
  * parses the 20-byte big-endian header, feeds packets to a [FrameAssembler] (reassembly +
  * XOR-FEC recovery + drop/discard rules), and periodically reports STATS on the control
  * channel. Also performs the DSMH hole-punch handshake from the same socket used to
- * receive, per §2.3.
+ * receive.
  *
  * One-shot: call [start] once, [stop] once. Create a new instance for a new stream.
  */
@@ -69,7 +69,7 @@ class MediaReceiver(
     private val onStalled: () -> Unit = {},
     private val onCursorPosition: (CursorPosition) -> Unit = {},
     private val onStartupError: (String) -> Unit = {},
-    /** STREAM_STARTED said `"recovery":"refresh"` (§2.3): a lost frame is skipped and
+    /** STREAM_STARTED said `"recovery":"refresh"`: a lost frame is skipped and
      * decoding continues while one intra-refresh wave heals the picture, instead of
      * freezing until a replacement IDR arrives. */
     refreshRecovery: Boolean = false
@@ -506,7 +506,7 @@ private class LatencyWindow {
 }
 
 // =========================================================================================
-// Frame assembly (§3.1) + XOR FEC recovery (§3.2)
+// Frame assembly + XOR FEC recovery
 // =========================================================================================
 
 private const val PACKET_PAYLOAD_MAX = 1200
@@ -525,7 +525,7 @@ private const val FEC_INTERLEAVE = 4
  * frame completing while an older one is still incomplete, or an external drop from the
  * decoder) puts the assembler into discard-until-keyframe mode.
  *
- * Exception — [refreshRecovery] streams (§2.3): once a keyframe has been delivered, an
+ * Exception — [refreshRecovery] streams: once a keyframe has been delivered, an
  * assembly gap is skipped instead ([onGapSkipped] asks for an intra-refresh wave) and later
  * frames keep flowing, so a lost packet costs a brief local smear rather than a freeze plus
  * an IDR burst. Decoder-side drops and startup still use discard-until-keyframe.
@@ -595,7 +595,7 @@ internal class FrameAssembler(
         if (header.fecCount != minOf(FEC_INTERLEAVE, header.packetCount)) return
         if (header.fec && header.packetIndex >= header.fecCount) return
         if (!header.fec && header.packetIndex >= header.packetCount) return
-        // Every media datagram's payload is <=1200 bytes per §3; a larger declared payloadLen
+        // Every media datagram's payload is <=1200 bytes; a larger declared payloadLen
         // (corrupt header or non-conformant sender) would overflow into the next packet's slot
         // in the assembly buffer, since slots are fixed at PACKET_PAYLOAD_MAX apart.
         if (header.payloadLen <= 0 || header.payloadLen > PACKET_PAYLOAD_MAX) return
@@ -929,7 +929,7 @@ private class InFlightFrame(
     /** Interleaved group mapping: group g contains packets g, g+FEC_INTERLEAVE, g+2*FEC_INTERLEAVE, ... */
     private fun groupOf(dataIndex: Int) = dataIndex % FEC_INTERLEAVE
 
-    /** XOR recovery per §3.2: if exactly one data packet in group [g] is missing and its
+    /** XOR recovery: if exactly one data packet in group [g] is missing and its
      *  parity packet is present, reconstruct it. With interleaved groups, a burst of up to
      *  FEC_INTERLEAVE consecutive packets hits different groups → all recoverable. */
     private fun tryRecoverGroup(g: Int) {
@@ -976,7 +976,7 @@ private class InFlightFrame(
         dataPresentCount++
         onFecRecovered()
         if (missingIdx == packetCount - 1) {
-            // Per §3.2: the recovered last packet's true length is the full parity length;
+            // The recovered last packet's true length is the full parity length;
             // the extra bytes beyond the real NAL data are harmless trailing zeros.
             lastPacketLen = parityLen
         }

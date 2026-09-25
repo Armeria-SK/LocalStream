@@ -129,32 +129,7 @@
                 android:textColor="@color/text_primary_dark"
                 android:textSize="11sp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnQuality"
-                android:focusable="true"
-                style="@style/Widget.LocalStream.ToolbarButton"
-                android:layout_width="60dp"
-                android:layout_height="44dp"
-                android:contentDescription="@string/cd_quality_button"
-                android:minWidth="0dp"
-                android:paddingHorizontal="2dp"
-                android:text="@string/quality_native"
-                android:textColor="@color/text_primary_dark"
-                android:textSize="11sp"
-                tools:text="720p" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnScreenshot"
-                android:focusable="true"
-                style="@style/Widget.LocalStream.ToolbarButton"
-                android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:contentDescription="@string/cd_screenshot_button"
-                android:minWidth="0dp"
-                android:paddingHorizontal="2dp"
-                android:text="@string/toolbar_screenshot"
-                android:textColor="@color/text_primary_dark"
-                android:textSize="11sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnHideControls"
@@ -222,19 +197,6 @@
                 android:textColor="@color/text_primary_dark"
                 android:textSize="11sp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPointerMode"
-                android:focusable="true"
-                style="@style/Widget.LocalStream.ToolbarButton"
-                android:layout_width="84dp"
-                android:layout_height="48dp"
-                android:contentDescription="@string/mouse_mode_change_description"
-                android:enabled="false"
-                android:minWidth="0dp"
-                android:paddingHorizontal="2dp"
-                android:text="@string/mouse_mode_touchpad"
-                android:textColor="@color/text_primary_dark"
-                android:textSize="11sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMouseClick"

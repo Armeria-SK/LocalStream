@@ -18,17 +18,17 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Controller-role screen (PROTOCOL.md §2.1): this device drives the PC's mouse and
+ * Controller-role screen: this device drives the PC's mouse and
  * keyboard while another client owns the screen output.
  *
- * - Touchpad → control-channel `MOUSE_MOTION` (§2.3): this connection never learned a
+ * - Touchpad → control-channel `MOUSE_MOTION`: this connection never learned a
  *   media endpoint, so the 28-byte DSMI datagram travels as its JSON twin. The pad behaves
  *   like a laptop trackpad (tap-to-click, natural two-finger scroll with glide, pinch
  *   zoom as Ctrl + wheel) with
  *   physical-style left/right click zones along its bottom edge.
  * - Text field → phone IME as composer: every edit is diffed into `KEYBOARD_TEXT`
  *   (Unicode, carries kana/kanji/emoji) or Backspace `KEYBOARD_KEY` transitions at the
- *   PC's focused caret (§2.4). Tapping the field raises the phone keyboard, which is the
+ *   PC's focused caret. Tapping the field raises the phone keyboard, which is the
  *   whole point of the field existing.
  */
 class ControllerActivity : AppCompatActivity() {
@@ -41,7 +41,7 @@ class ControllerActivity : AppCompatActivity() {
      * composer's record of what was typed diverged from the PC). */
     private var inputEnabled = false
 
-    /** One ordered sequence space for ALL keyboard traffic (§2.4): HID transitions and
+    /** One ordered sequence space for ALL keyboard traffic: HID transitions and
      * Unicode bursts share it because the host tracks a single monotonic last-sequence. */
     private var keySequence = 0L
 
@@ -56,7 +56,6 @@ class ControllerActivity : AppCompatActivity() {
         remoteMouse = RemoteMouseController(
             binding.touchpad,
             sendMotion = { packet -> sendMotionTcp(packet) },
-            onModeChanged = { },
             // Clean screen is a stream-viewer concern; the controller screen is always
             // controls-visible, so three-finger gestures belong to the touchpad itself.
             shouldHandleCleanScreenGesture = { false },
@@ -90,7 +89,7 @@ class ControllerActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // §2.4: the client MUST reset the keyboard when its capture is released. Keys are
+        // The client MUST reset the keyboard when its capture is released. Keys are
         // never held across messages here (each send is a down/up pair), so this is a
         // belt-and-braces release for anything the host still tracks.
         ControlClient.sendKeyboardReset()
@@ -144,7 +143,7 @@ class ControllerActivity : AppCompatActivity() {
 
     /**
      * Parses the serialized DSMI packet and carries it over the control channel as
-     * MOUSE_MOTION (§2.3). Layout mirrors MousePacket.write: mode at 5, uint32 sequence at
+     * MOUSE_MOTION. Layout mirrors MousePacket.write: mode at 5, uint32 sequence at
      * 8, int32 x/y at 12/16, wheels at 20/24 — all big-endian.
      */
     private fun sendMotionTcp(packet: ByteArray) {
@@ -194,14 +193,14 @@ class ControllerActivity : AppCompatActivity() {
         return i
     }
 
-    /** One HID usage as a down/up pair on the shared keyboard sequence (§2.4). */
+    /** One HID usage as a down/up pair on the shared keyboard sequence. */
     private fun sendUsageKey(usage: Int) {
         ControlClient.sendKeyboardKey(keySequence++, usage, true)
         ControlClient.sendKeyboardKey(keySequence++, usage, false)
     }
 
     private companion object {
-        /** USB HID Keyboard-page usages: Enter/Return, Backspace, Left Control (§2.4). */
+        /** USB HID Keyboard-page usages: Enter/Return, Backspace, Left Control. */
         const val HID_ENTER = 0x28
         const val HID_BACKSPACE = 0x2A
         const val HID_LEFT_CTRL = 0xE0

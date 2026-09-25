@@ -216,7 +216,7 @@ public sealed class NvencEncoder : IVideoEncoder
         rc.LowDelayKeyFrameScale = 1;
         _config.RcParams = rc;
 
-        // Intra refresh is on-demand only (PROTOCOL.md §2.3 REQUEST_REFRESH): the periodic
+        // Intra refresh is on-demand only (REQUEST_REFRESH): the periodic
         // interval is effectively infinite and Submit starts one wave per reported loss via
         // ForceIntraRefreshWithFrameCnt, so steady-state quality is unchanged.
         const uint OnDemandOnlyPeriod = 1u << 30;

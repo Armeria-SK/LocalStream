@@ -25,7 +25,7 @@ import java.net.SocketTimeoutException
 data class DiscoveredServer(val name: String, val ip: String, val controlPort: Int)
 
 /**
- * UDP discovery per docs/PROTOCOL.md §1.
+ * UDP discovery.
  *
  * Sends the 8-byte ASCII probe "DSPROBE1" to 255.255.255.255:47800 and to every local
  * interface's subnet broadcast address, once per second while active. Listens on the same

@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace LocalStream.Server.Protocol;
 
 /// <summary>
-/// Media datagram header helpers. Wire layout is defined in PROTOCOL.md §3 and is
+/// Media datagram header helpers. The wire layout is
 /// strictly big-endian for every multi-byte field.
 ///
 /// offset size field

@@ -77,7 +77,7 @@ public sealed class RemoteKeyboardManager : IDisposable
     /// Injects a burst of Unicode text as KEYEVENTF_UNICODE down/up pairs, one per UTF-16
     /// code unit. The single [sequence] covers the whole message so a controller client can
     /// keep one ordered keyboard stream across HID key transitions (KEYBOARD_KEY) and IME
-    /// text with no HID usage: kana, kanji, emoji (PROTOCOL.md §2.4).
+    /// text with no HID usage: kana, kanji, emoji.
     /// </summary>
     public void SetUnicode(uint sequence, string text)
     {
