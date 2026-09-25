@@ -89,6 +89,10 @@ public sealed class StartStreamMessage
     /// <summary>Optional loss-recovery modes the client implements. "refresh" = it keeps
     /// decoding across a lost frame and sends REQUEST_REFRESH.</summary>
     [JsonPropertyName("recovery")] public string[]? Recovery { get; set; }
+
+    /// <summary>Optional FEC layouts the client reassembles. "adaptive" = any parity-group
+    /// count up to packetCount, used as the interleave width. Absent = min(4, packetCount).</summary>
+    [JsonPropertyName("fec")] public string[]? Fec { get; set; }
 }
 
 public sealed class EndpointReadyMessage

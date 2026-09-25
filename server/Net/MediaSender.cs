@@ -16,11 +16,16 @@ namespace LocalStream.Server.Net;
 /// </summary>
 public sealed class MediaSender : IDisposable
 {
-    // Interleaved XOR FEC: data packets are spread across FecInterleave groups so that a burst
-    // loss of up to FecInterleave consecutive packets hits different groups (1 loss each → all
-    // recoverable). With the old consecutive groups of 8, a 2-packet burst in one group killed
-    // the frame. This remains simple XOR protection, not a substitute for general erasure coding.
-    private const int FecInterleave = 4;
+    // Interleaved XOR FEC: data packets are spread across fecCount groups (group g holds
+    // packets g, g+fecCount, ...) so a burst loss of up to fecCount consecutive packets hits
+    // different groups (1 loss each → all recoverable). This remains simple XOR protection,
+    // not a substitute for general erasure coding.
+    //
+    // Legacy clients only accept min(4, packetCount) groups. A client that offers adaptive FEC
+    // gets ~12% of the frame's packets as parity instead: a 50 Mbps frame of ~90 packets then
+    // survives an 11-packet Wi-Fi burst, where four fixed groups of ~22 survived 4.
+    private const int MinFecGroups = 4;
+    private const int AdaptiveFecPercent = 12;
     private static readonly byte[] Dsmh = Encoding.ASCII.GetBytes("DSMH");
     private static readonly byte[] Dshb = Encoding.ASCII.GetBytes("DSHB");
 
@@ -38,6 +43,8 @@ public sealed class MediaSender : IDisposable
     private long _bytesSent;
     private long _sendFailures;
     private long _pacingWaitUs;
+    private readonly HighResolutionSleeper _pacingSleeper = new();
+    private readonly MediaQosFlow _qos;
 
     // Token-bucket micro-pacing. Only oversized IDR bursts get shaped: the
     // bucket comfortably covers a normal P-frame, so those pass untouched. Shaping a ~150-300 KB
@@ -75,7 +82,7 @@ public sealed class MediaSender : IDisposable
     /// <summary>
     /// Token-bucket gate run on the send thread at the top of the datagram-send routine. Refills by
     /// elapsed*rate (capped at capacity); if the datagram fits, subtract and return immediately;
-    /// otherwise coarse-sleep then spin to the exact target tick and drain the bucket to zero.
+    /// otherwise wait out the debt on a high-resolution timer once it reaches 1 ms.
     /// </summary>
     private void PaceBeforeSend(int len)
     {
@@ -104,7 +111,7 @@ public sealed class MediaSender : IDisposable
             return;
 
         long beforeSleep = Stopwatch.GetTimestamp();
-        Thread.Sleep((int)Math.Ceiling(waitUs / 1000.0));
+        _pacingSleeper.Sleep(waitUs);
         long afterSleep = Stopwatch.GetTimestamp();
         long actualWaitUs = (afterSleep - beforeSleep) * 1_000_000 / Stopwatch.Frequency;
         Interlocked.Add(ref _pacingWaitUs, actualWaitUs);
@@ -125,6 +132,10 @@ public sealed class MediaSender : IDisposable
     public long BytesSent => Interlocked.Read(ref _bytesSent);
     public long SendFailures => Interlocked.Read(ref _sendFailures);
     public long PacingWaitUs => Interlocked.Read(ref _pacingWaitUs);
+    public bool HighResolutionPacing => _pacingSleeper.IsHighResolution;
+
+    /// <summary>Set before <see cref="Start"/> when the client offered "adaptive" FEC.</summary>
+    public bool AdaptiveFec { get; set; }
 
     public MediaSender(int preferredPort, IPAddress? expectedClientAddress = null)
     {
@@ -134,12 +145,13 @@ public sealed class MediaSender : IDisposable
         // Keep the OS send buffer small: dropping beats queuing for latency.
         try { _socket.SendBufferSize = 256 * 1024; } catch { }
 
-        // DSCP AF41 / TOS 0x88, best-effort. IP_TOS = 3; Windows usually
-        // ignores this without qWAVE, hence best-effort. May throw without privilege.
+        // DSCP AF41 / TOS 0x88, best-effort. IP_TOS = 3; Windows usually ignores this, so the
+        // qWAVE flow (added once the client endpoint is known) is what actually marks packets.
         try { _socket.SetSocketOption(SocketOptionLevel.IP, (SocketOptionName)3, 0x88); }
         catch { }
 
         Port = UdpPortBinder.Bind(_socket, preferredPort, "video");
+        _qos = new MediaQosFlow(_socket);
         // Keep the default blocking mode. Non-blocking Windows UDP commonly returns
         // WSAEWOULDBLOCK during IDR bursts; abandoning the remainder then guarantees an
         // incomplete frame. The bounded kernel buffer still limits queue growth.
@@ -222,7 +234,10 @@ public sealed class MediaSender : IDisposable
         bool endpointChanged = _clientEndpoint?.Equals(endpoint) != true;
         _clientEndpoint = endpoint;
         if (endpointChanged)
+        {
+            _qos.SetDestination(endpoint);
             OnClientConnected?.Invoke();
+        }
     }
 
     /// <summary>
@@ -244,7 +259,7 @@ public sealed class MediaSender : IDisposable
         if (packetCount > ushort.MaxValue)
             return; // absurdly large frame; skip rather than corrupt indices
 
-        int fecCount = Math.Min(FecInterleave, packetCount);
+        int fecCount = FecGroupCount(packetCount);
         byte dataFlags = keyframe ? MediaPacket.FlagKeyframe : (byte)0;
         bool allDataSent = true;
 
@@ -264,15 +279,15 @@ public sealed class MediaSender : IDisposable
         }
 
         // ---- FEC packets: interleaved XOR parity ----
-        // Group g contains data packets at indices g, g+FecInterleave, g+2*FecInterleave, ...
-        // A burst loss of up to FecInterleave consecutive packets hits each group at most once.
+        // Group g contains data packets at indices g, g+fecCount, g+2*fecCount, ...
+        // A burst loss of up to fecCount consecutive packets hits each group at most once.
         for (int g = 0; g < fecCount; g++)
         {
             // Parity must be as long as the largest group member. The old code started at 1200
             // and then shortened the group when it encountered the final partial packet, even if
             // that group also contained full packets. Such parity silently corrupted recovery.
             int maxLen = 0;
-            for (int i = g; i < packetCount; i += FecInterleave)
+            for (int i = g; i < packetCount; i += fecCount)
             {
                 int offset = i * MediaPacket.MaxPayload;
                 int payloadLen = i == packetCount - 1
@@ -282,7 +297,7 @@ public sealed class MediaSender : IDisposable
             }
 
             Array.Clear(_fecBuffer, 0, maxLen);
-            for (int i = g; i < packetCount; i += FecInterleave)
+            for (int i = g; i < packetCount; i += fecCount)
             {
                 int offset = i * MediaPacket.MaxPayload;
                 int payloadLen = (i == packetCount - 1) ? (length - offset) : MediaPacket.MaxPayload;
@@ -301,6 +316,15 @@ public sealed class MediaSender : IDisposable
 
         if (allDataSent)
             Interlocked.Increment(ref _framesSent);
+    }
+
+    /// <summary>Parity group count, which is also the interleave width.</summary>
+    private int FecGroupCount(int packetCount)
+    {
+        if (!AdaptiveFec)
+            return Math.Min(MinFecGroups, packetCount);
+        int scaled = (packetCount * AdaptiveFecPercent + 99) / 100;
+        return Math.Min(packetCount, Math.Max(MinFecGroups, scaled));
     }
 
     public void SendCursorPosition(uint sequence, CursorPosition position)
@@ -339,9 +363,11 @@ public sealed class MediaSender : IDisposable
     public void Dispose()
     {
         try { _cts?.Cancel(); } catch { }
+        try { _qos.Dispose(); } catch { }
         try { _socket.Dispose(); } catch { }
         try { _learnLoop?.Wait(1000); } catch { }
         try { _heartbeatLoop?.Wait(1000); } catch { }
+        _pacingSleeper.Dispose();
         _cts?.Dispose();
     }
 }

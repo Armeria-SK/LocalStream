@@ -491,8 +491,6 @@ private const val MAX_INFLIGHT_FRAMES = 4
 private const val REORDER_GRACE_MS = 20L
 /** Sanity ceiling on packetCount to refuse to allocate absurd buffers for a corrupt header. */
 private const val MAX_REASONABLE_PACKET_COUNT = 4096
-/** Number of interleaved FEC groups. Must match the server's FecInterleave constant. */
-private const val FEC_INTERLEAVE = 4
 
 /**
  * Reassembles the media stream by frameId, recovers isolated packet loss via XOR parity, and
@@ -563,11 +561,11 @@ internal class FrameAssembler(
     ) {
         applyExternalDiscardIfNeeded()
         if (header.packetCount <= 0 || header.packetCount > MAX_REASONABLE_PACKET_COUNT) return
-        // fecCount is attacker/corruption-controlled independent of packetCount; bound it too
-        // so a bogus header can't force a huge array allocation.
-        if (header.fecCount < 0 || header.fecCount > MAX_REASONABLE_PACKET_COUNT) return
-        // Interleaved FEC: fecCount = min(FEC_INTERLEAVE, packetCount)
-        if (header.fecCount != minOf(FEC_INTERLEAVE, header.packetCount)) return
+        // Interleaved FEC: fecCount parity groups, which is also the interleave width. Older
+        // servers send min(4, packetCount); adaptive-FEC servers scale it with the frame. It is
+        // corruption-controlled independent of packetCount, so bound it by packetCount (every
+        // group needs at least one member) to keep a bogus header from forcing a huge array.
+        if (header.fecCount < 1 || header.fecCount > header.packetCount) return
         if (header.fec && header.packetIndex >= header.fecCount) return
         if (!header.fec && header.packetIndex >= header.packetCount) return
         // Every media datagram's payload is <=1200 bytes; a larger declared payloadLen
@@ -578,10 +576,10 @@ internal class FrameAssembler(
             header.payloadLen != PACKET_PAYLOAD_MAX
         ) return
         if (header.fec) {
-            // Interleaved: group g contains packets at g, g+FEC_INTERLEAVE, g+2*FEC_INTERLEAVE, ...
+            // Interleaved: group g contains packets at g, g+fecCount, g+2*fecCount, ...
             val g = header.packetIndex
             if (g >= header.packetCount) return
-            val memberCount = (header.packetCount - g + FEC_INTERLEAVE - 1) / FEC_INTERLEAVE
+            val memberCount = (header.packetCount - g + header.fecCount - 1) / header.fecCount
             // Parity is as long as the group's largest member. A multi-member group always has
             // at least one non-final 1200-byte packet, even when it also contains the short final
             // packet. Rejecting truncated parity prevents silently fabricating a corrupted AU.
@@ -901,18 +899,18 @@ private class InFlightFrame(
         }
     }
 
-    /** Interleaved group mapping: group g contains packets g, g+FEC_INTERLEAVE, g+2*FEC_INTERLEAVE, ... */
-    private fun groupOf(dataIndex: Int) = dataIndex % FEC_INTERLEAVE
+    /** Interleaved group mapping: group g contains packets g, g+fecCount, g+2*fecCount, ... */
+    private fun groupOf(dataIndex: Int) = dataIndex % fecCount
 
     /** XOR recovery: if exactly one data packet in group [g] is missing and its
      *  parity packet is present, reconstruct it. With interleaved groups, a burst of up to
-     *  FEC_INTERLEAVE consecutive packets hits different groups → all recoverable. */
+     *  fecCount consecutive packets hits different groups → all recoverable. */
     private fun tryRecoverGroup(g: Int) {
         if (g < 0 || g >= fecCount) return
         val parityLen = fecLen[g]
         if (parityLen < 0) return // no parity for this group yet
 
-        // Interleaved: group g contains packets at g, g+FEC_INTERLEAVE, g+2*FEC_INTERLEAVE, ...
+        // Interleaved: group g contains packets at g, g+fecCount, g+2*fecCount, ...
         var missingIdx = -1
         var missingCount = 0
         var i = g
@@ -921,7 +919,7 @@ private class InFlightFrame(
                 missingCount++
                 missingIdx = i
             }
-            i += FEC_INTERLEAVE
+            i += fecCount
         }
 
         if (missingCount == 0) {
@@ -942,7 +940,7 @@ private class InFlightFrame(
                     val jOffset = j * PACKET_PAYLOAD_MAX
                     if (k < jLen) v = (v.toInt() xor assemblyBuf[jOffset + k].toInt()).toByte()
                 }
-                j += FEC_INTERLEAVE
+                j += fecCount
             }
             assemblyBuf[destOffset + k] = v
         }
