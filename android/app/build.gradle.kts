@@ -11,16 +11,32 @@ android {
         applicationId = "com.localstream.client"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "0.8.1"
+        versionCode = 23
+        versionName = "1.0.0"
+    }
+
+    // Release key (CN=Armeria), supplied by CI from repository secrets. A fresh CI runner
+    // generates a new debug key every run, so a stable key is what lets each APK install
+    // over the previous one. Without these variables (local builds) release falls back to
+    // the debug key and still produces an installable APK.
+    val releaseKeystore = System.getenv("LOCALSTREAM_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storeType = "pkcs12"
+                storePassword = System.getenv("LOCALSTREAM_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LOCALSTREAM_KEY_ALIAS")
+                // PKCS12 keystores protect the key with the store password.
+                keyPassword = System.getenv("LOCALSTREAM_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            // Signed with the debug key on purpose: this is a LAN-only client, and this way
-            // `assembleRelease` produces an installable APK with no keystore setup.
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

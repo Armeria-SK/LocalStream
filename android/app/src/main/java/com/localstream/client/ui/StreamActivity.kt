@@ -14,7 +14,6 @@ import android.view.SurfaceHolder
 import android.view.Surface
 import android.view.View
 import android.view.WindowManager
-import android.view.accessibility.AccessibilityManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -95,11 +94,9 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
      * leave READY/STREAMING or the surface goes away, so we don't send it twice. */
     private var streamRequested = false
     private var statsVisible = false
-    private var audioMuted = false
     private var audioNegotiationJob: Job? = null
     private var inputNegotiationJob: Job? = null
     private var mouseHintJob: Job? = null
-    private var mouseToolbarCollapseJob: Job? = null
     private var stallRecoveryInProgress = false
     private var streamStartFailed = false
     private var audioStatus = "starting"
@@ -121,10 +118,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private val offeredCodecs by lazy { VideoDecoder.supportedCodecs() }
     private var lastEncoderBackend = "media-foundation"
     private var mouseStatus = "negotiating"
-    private var mouseEnabledByUser = true
-    /** The persistent mouse affordance is one compact pill. Its full action strip is revealed
-     * only on demand and automatically collapses after a short idle period. */
-    private var mouseToolbarExpanded = false
+    /** Ordered sequence space for keyboard traffic (the Ctrl taps of pinch zoom). */
+    private var keySequence = 0L
     /** Leave confirmation is a modal dialog rather than a Snackbar: a TV remote's D-pad can
      * focus its buttons, it never auto-dismisses, and Back cancels it. */
     private var leaveDialog: AlertDialog? = null
@@ -138,8 +133,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var controlsHidden = false
 
     // ---- Remote (D-pad) pointer fallback --------------------------------------------------
-    // Android TV remotes have no touchscreen, so the on-screen mouse toolbar (built for touch
-    // gestures) is unreachable once clean-screen mode hides it. While controlsHidden is true,
+    // Android TV remotes have no touchscreen, so the touch trackpad is out of their reach.
+    // While controlsHidden is true,
     // D-pad direction keys drive the cursor directly and DPAD_CENTER/ENTER click, instead of
     // trying to time-share the D-pad with on-screen focus navigation (see handleRemotePointerKey).
     private val remotePointerHandler = Handler(Looper.getMainLooper())
@@ -175,7 +170,17 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 mediaReceiver?.sendMousePacket(packet)
             },
             shouldHandleCleanScreenGesture = { controlsHidden },
-            onCleanScreenReveal = { showControls() }
+            onCleanScreenReveal = { showControls() },
+            // Same laptop-style trackpad as the controller screen: tap clicks, two fingers
+            // scroll, pinch zooms (Ctrl + wheel).
+            trackpad = true,
+            zoomModifier = { down -> ControlClient.sendKeyboardKey(keySequence++, HID_LEFT_CTRL, down) },
+            // The Ctrl taps go over TCP, so the zoom notch between them must too; over UDP it
+            // could reach the PC outside the Ctrl press and scroll instead.
+            sendZoomMotion = { packet ->
+                onOutgoingMousePacket(packet)
+                ControlClient.sendMousePacket(packet)
+            }
         )
         createWifiLock()
         applyImmersiveMode()
@@ -190,29 +195,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             toggleDiagnostics()
         }
         binding.tvStreamStatus.setOnClickListener { toggleDiagnostics() }
-        binding.btnAudio.setOnClickListener {
-            audioMuted = !audioMuted
-            audioReceiver?.setMuted(audioMuted)
-            updateAudioButton()
-            renderDiagnostics()
-        }
-        binding.btnMouseToggle.setOnClickListener {
-            mouseEnabledByUser = !mouseEnabledByUser
-            applyMouseControls()
-            if (mouseEnabledByUser) showMouseGestureHint()
-            scheduleMouseToolbarCollapse()
-        }
-        binding.btnMouseClick.setOnClickListener {
-            remoteMouse.clickLeft()
-            scheduleMouseToolbarCollapse()
-        }
-        binding.btnMouseRight.setOnClickListener {
-            remoteMouse.clickRight()
-            scheduleMouseToolbarCollapse()
-        }
-        binding.btnMouseMenu.setOnClickListener {
-            if (mouseToolbarExpanded) collapseMouseToolbar() else expandMouseToolbar()
-        }
         binding.btnStats.setOnClickListener { toggleDiagnostics() }
         binding.btnHideControls.setOnClickListener { hideControls() }
         binding.btnLeave.setOnClickListener { confirmLeave() }
@@ -271,8 +253,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         leaveDialog = null
         dismissActiveSnackbars()
         hideMouseGestureHint()
-        mouseToolbarCollapseJob?.cancel()
-        mouseToolbarCollapseJob = null
         resetRemotePointerState()
         cursorFallbackJob?.cancel()
         cursorFallbackJob = null
@@ -316,16 +296,14 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     /** D-pad-as-mouse fallback used only while clean screen is active (see [dispatchKeyEvent]).
      * Direction keys nudge the cursor at a fixed step on a repeating timer for as long as held;
-     * DPAD_CENTER/ENTER left-clicks on a short press and right-clicks on a long press, mirroring
-     * the touch toolbar's single click vs. explicit right-click action. */
+     * DPAD_CENTER/ENTER left-clicks on a short press and right-clicks on a long press. */
     private fun handleRemotePointerKey(event: KeyEvent): Boolean {
-        if (!(mouseStatus == "live" && mouseEnabledByUser)) {
+        if (mouseStatus != "live") {
             // No usable pointer while the overlay is hidden (mouse still negotiating after a
-            // reconnect, or the user disabled it). Returning false here leaves the remote
-            // completely dead: nothing on screen can take focus, so every D-pad press would do
-            // nothing at all. Consume the D-pad keys and reveal the controls instead — the
-            // toolbar is the only way to re-enable the mouse. Non-D-pad keys (volume, etc.)
-            // keep their normal system behavior.
+            // reconnect, or unavailable). Returning false here leaves the remote completely
+            // dead: nothing on screen can take focus, so every D-pad press would do nothing
+            // at all. Consume the D-pad keys and reveal the controls instead. Non-D-pad keys
+            // (volume, etc.) keep their normal system behavior.
             val isDpad = when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
@@ -660,8 +638,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         negotiateMouseInput()
 
         binding.tvStreamStatus.visibility = View.VISIBLE
-        binding.btnAudio.isEnabled = false
-        updateAudioButton()
         renderDiagnostics()
         ControlClient.startAudio()
         audioNegotiationJob?.cancel()
@@ -670,7 +646,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             if (audioReceiver == null && audioStatus == "starting") {
                 audioStatus = "unavailable"
                 audioDetail = "No audio reply (the server may be an older version)"
-                updateAudioButton()
                 renderDiagnostics()
             }
         }
@@ -679,7 +654,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun negotiateMouseInput() {
         mouseStatus = "negotiating"
         applyMouseControls()
-        ControlClient.startMouseInput()
+        ControlClient.startMouseKeyboardInput()
         inputNegotiationJob?.cancel()
         inputNegotiationJob = lifecycleScope.launch {
             delay(INPUT_NEGOTIATION_TIMEOUT_MS)
@@ -708,27 +683,13 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun applyMouseControls() {
-        val negotiated = mouseStatus == "live"
-        val active = negotiated && mouseEnabledByUser
+        val active = mouseStatus == "live"
         remoteMouse.setEnabled(active)
-        binding.btnMouseToggle.isEnabled = negotiated
-        binding.btnMouseToggle.text = if (mouseEnabledByUser) {
-            getString(R.string.mouse_disable)
-        } else {
-            getString(R.string.mouse_enable)
-        }
-        binding.btnMouseToggle.contentDescription = if (mouseEnabledByUser) {
-            getString(R.string.mouse_disable_description)
-        } else {
-            getString(R.string.mouse_enable_description)
-        }
-        binding.btnMouseClick.isEnabled = active
-        binding.btnMouseRight.isEnabled = active
         // Do not flash an unpositioned cursor in the top-left corner. It becomes visible
         // only after feedback arrives for the first motion packet.
         if (!active) {
             if (binding.tvRemoteCursor.visibility == View.VISIBLE) {
-                lastCursorHide = if (mouseStatus != "live") "input:$mouseStatus" else "mouse-off"
+                lastCursorHide = "input:$mouseStatus"
             }
             binding.tvRemoteCursor.visibility = View.GONE
             hideMouseGestureHint()
@@ -744,7 +705,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun updateRemoteCursor(position: CursorPosition) {
-        if (mouseStatus != "live" || !mouseEnabledByUser) return
+        if (mouseStatus != "live") return
         val surface = binding.surfaceView
         val cursor = binding.tvRemoteCursor
         if (surface.width <= 0 || surface.height <= 0) return
@@ -781,7 +742,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun onOutgoingMousePacket(packet: ByteArray) {
         cursorOutPackets++
         if (cursorDsmcSeen || packet.size < MousePacket.SIZE) return
-        if (mouseStatus != "live" || !mouseEnabledByUser) return
+        if (mouseStatus != "live") return
         if (lastStreamWidth <= 0 || lastStreamHeight <= 0) return
         // Motion is always relative host-pixel deltas; the stream is the host desktop at
         // native size, so its dimensions convert them to the normalized overlay position.
@@ -795,7 +756,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             cursorFallbackJob = lifecycleScope.launch {
                 delay(CURSOR_FALLBACK_DELAY_MS)
                 cursorFallbackJob = null
-                if (!cursorDsmcSeen && mouseStatus == "live" && mouseEnabledByUser) {
+                if (!cursorDsmcSeen && mouseStatus == "live") {
                     cursorFallbackShown = true
                     renderVirtualCursor()
                 }
@@ -804,7 +765,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun renderVirtualCursor() {
-        if (cursorDsmcSeen || mouseStatus != "live" || !mouseEnabledByUser) return
+        if (cursorDsmcSeen || mouseStatus != "live") return
         val surface = binding.surfaceView
         val cursor = binding.tvRemoteCursor
         if (surface.width <= 0 || surface.height <= 0) return
@@ -820,7 +781,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             (bytes[offset + 3].toInt() and 0xff)
 
     private fun showMouseGestureHint() {
-        if (mouseStatus != "live" || !mouseEnabledByUser) return
+        if (mouseStatus != "live") return
         mouseHintJob?.cancel()
         binding.tvGestureHint.animate().cancel()
         binding.tvGestureHint.alpha = 1f
@@ -844,40 +805,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding.tvGestureHint.animate().cancel()
         binding.tvGestureHint.alpha = 1f
         binding.tvGestureHint.visibility = View.GONE
-    }
-
-    private fun expandMouseToolbar() {
-        if (controlsHidden || mouseToolbarExpanded) return
-        mouseToolbarExpanded = true
-        binding.mouseActions.visibility = View.VISIBLE
-        binding.btnMouseMenu.contentDescription = getString(R.string.mouse_menu_hide_description)
-        binding.mouseActions.announceForAccessibility(getString(R.string.mouse_controls_shown))
-        scheduleMouseToolbarCollapse()
-    }
-
-    private fun collapseMouseToolbar() {
-        mouseToolbarCollapseJob?.cancel()
-        mouseToolbarCollapseJob = null
-        mouseToolbarExpanded = false
-        binding.mouseActions.visibility = View.GONE
-        binding.btnMouseMenu.contentDescription = getString(R.string.mouse_menu_show_description)
-    }
-
-    private fun scheduleMouseToolbarCollapse() {
-        mouseToolbarCollapseJob?.cancel()
-        mouseToolbarCollapseJob = null
-        if (!mouseToolbarExpanded) return
-
-        // Auto-collapsing while TalkBack is traversing the newly revealed actions can strand
-        // accessibility focus. Touch-exploration users close the anchored Mouse button
-        // explicitly; everyone else gets the low-obstruction five-second idle behavior.
-        val accessibility = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-        if (accessibility?.isTouchExplorationEnabled == true) return
-
-        mouseToolbarCollapseJob = lifecycleScope.launch {
-            delay(MOUSE_TOOLBAR_EXPANDED_MS)
-            collapseMouseToolbar()
-        }
     }
 
     private fun restartStalledStream() {
@@ -972,7 +899,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding.overlayLayer.visibility = if (controlsHidden) View.GONE else View.VISIBLE
         if (controlsHidden) {
             hideMouseGestureHint()
-            collapseMouseToolbar()
         }
         // The activity is already sticky-immersive at all times (see applyImmersiveMode()); a
         // system-bar swipe-reveal while controls are hidden should still auto-hide again, so
@@ -1030,9 +956,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     if (state == AudioPlaybackState.ERROR) {
                         audioReceiver = null
                     }
-                    binding.btnAudio.isEnabled = state == AudioPlaybackState.READY ||
-                        state == AudioPlaybackState.PLAYING
-                    updateAudioButton()
                     renderDiagnostics()
                 }
             },
@@ -1045,7 +968,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
         )
         audioReceiver = receiver
-        receiver.setMuted(audioMuted)
         receiver.start(
             serverIp = ControlClient.serverIp,
             audioPort = msg.audioPort,
@@ -1063,8 +985,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         audioReceiver = null
         audioStatus = "unavailable"
         audioDetail = message.ifEmpty { "PC system audio is unavailable" }
-        binding.btnAudio.isEnabled = false
-        updateAudioButton()
         renderDiagnostics()
         showSnackbar("Video is live, but audio is unavailable: $audioDetail", Snackbar.LENGTH_LONG)
     }
@@ -1080,9 +1000,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         inputNegotiationJob = null
         hideMouseGestureHint()
         remoteMouse.setEnabled(false)
-        binding.btnMouseToggle.isEnabled = false
-        binding.btnMouseClick.isEnabled = false
-        binding.btnMouseRight.isEnabled = false
         binding.tvRemoteCursor.visibility = View.GONE
         cursorFallbackJob?.cancel()
         cursorFallbackJob = null
@@ -1099,7 +1016,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         stoppedDecoder?.release()
         audioReceiver?.stop()
         audioReceiver = null
-        binding.btnAudio.isEnabled = false
     }
 
     private fun showCenterStatus(message: String) {
@@ -1108,19 +1024,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         // The connection-state chip (tvStreamStatus/viewStatusDot) is intentionally left alone
         // here: it now reflects Connecting/Streaming/Reconnecting continuously (see
         // updateStatusChip()), independent of this large center-screen message.
-    }
-
-    private fun updateAudioButton() {
-        binding.btnAudio.text = when (audioStatus) {
-            "starting" -> "Audio…"
-            "unavailable" -> "No audio"
-            else -> if (audioMuted) getString(R.string.toolbar_unmute) else getString(R.string.toolbar_mute)
-        }
-        binding.btnAudio.contentDescription = if (audioMuted) {
-            getString(R.string.cd_unmute_button)
-        } else {
-            getString(R.string.cd_mute_button)
-        }
     }
 
     private fun renderDiagnostics() {
@@ -1154,7 +1057,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 append("NET    waiting for first video stats…\n")
             }
             append("AUDIO  $audioDetail")
-            if (audioMuted) append(" · locally muted")
             append('\n')
             if (audio != null) {
                 val activity = if (audio.receivingAudio) "receiving" else "source quiet"
@@ -1163,8 +1065,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             } else {
                 append("A-NET  waiting for audio packets…")
             }
-            append("\nMOUSE  $mouseStatus · ")
-            append(if (mouseEnabledByUser) "on" else "off")
+            append("\nMOUSE  $mouseStatus")
             append("\nCURSOR out=$cursorOutPackets · dsmc=")
             append(if (cursorDsmcSeen) "seen" else "none")
             append(" · fallback=")
@@ -1259,7 +1160,8 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         // Insurance cursor: only claim the pointer is missing after motion actually flowed.
         private const val CURSOR_FALLBACK_DELAY_MS = 150L
         private const val MOUSE_HINT_FADE_MS = 250L
-        private const val MOUSE_TOOLBAR_EXPANDED_MS = 5000L
+        /** USB HID Keyboard-page usage for Left Control. */
+        private const val HID_LEFT_CTRL = 0xE0
         private const val AUDIO_NEGOTIATION_TIMEOUT_MS = 3500L
         private const val INPUT_NEGOTIATION_TIMEOUT_MS = 2500L
         // D-pad-as-mouse fallback (clean-screen only; see handleRemotePointerKey).

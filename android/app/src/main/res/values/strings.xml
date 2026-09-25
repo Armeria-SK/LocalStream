@@ -1,30 +1,16 @@
 <resources>
     <string name="app_name">LocalStream</string>
-    <string name="mouse_menu">Mouse</string>
-    <string name="mouse_menu_show_description">Show mouse controls</string>
-    <string name="mouse_menu_hide_description">Hide mouse controls</string>
-    <string name="mouse_controls_shown">Mouse controls shown</string>
-    <string name="mouse_enable">Enable</string>
-    <string name="mouse_disable">Disable</string>
-    <string name="mouse_enable_description">Enable remote mouse</string>
-    <string name="mouse_disable_description">Disable remote mouse</string>
-    <string name="mouse_left">Left</string>
-    <string name="mouse_right">Right</string>
     <string name="mouse_left_click_description">Send a left mouse click</string>
     <string name="mouse_right_click_description">Send a right mouse click</string>
-    <string name="mouse_gesture_hint">Move: 1 finger · Click: double-tap · Drag: double-tap + move\nScroll: 2 fingers · Right-click: short 2-finger tap</string>
+    <string name="mouse_gesture_hint">Move: 1 finger · Tap: click · Tap then drag: drag\n2-finger tap: right-click · 2-finger swipe: scroll · Pinch: zoom</string>
     <string name="leave_stream_prompt">Leave the stream?</string>
     <string name="leave_stream_action">LEAVE</string>
     <string name="leave_stream_cancel">STAY</string>
 
     <!-- Toolbar buttons (v0.5.0 restyle) -->
-    <string name="toolbar_mute">Mute</string>
-    <string name="toolbar_unmute">Unmute</string>
     <string name="toolbar_stats">Stats</string>
     <string name="toolbar_leave">Leave</string>
     <string name="toolbar_hide">Hide</string>
-    <string name="cd_mute_button">Mute PC audio</string>
-    <string name="cd_unmute_button">Unmute PC audio</string>
     <string name="cd_stats_button">Toggle latency and network statistics overlay</string>
     <string name="cd_leave_button">Leave the stream and return to the server list</string>
     <string name="cd_hide_button">Hide all on-screen controls for a clean screen</string>

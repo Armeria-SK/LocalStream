@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.localstream.client.data.Prefs
 import com.localstream.client.proto.ClientMessages
+import com.localstream.client.proto.MousePacket
 import com.localstream.client.proto.ServerMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -192,10 +193,6 @@ object ControlClient {
         scope.launch { writeFrame(ClientMessages.audioReady(port)) }
     }
 
-    fun startMouseInput() {
-        scope.launch { writeFrame(ClientMessages.startMouseInput()) }
-    }
-
     fun stopInput() {
         scope.launch { writeFrame(ClientMessages.stopInput()) }
     }
@@ -232,6 +229,24 @@ object ControlClient {
     ) {
         mouseControlFrames.trySend(
             ClientMessages.mouseMotion(sequence, absolute, x, y, hwheel, vwheel)
+        )
+    }
+
+    /**
+     * Carries a serialized DSMI packet over the control channel as MOUSE_MOTION. Layout
+     * mirrors MousePacket.write: mode at 5, uint32 sequence at 8, int32 x/y at 12/16,
+     * wheels at 20/24 — all big-endian.
+     */
+    fun sendMousePacket(packet: ByteArray) {
+        if (packet.size < MousePacket.SIZE) return
+        val bb = ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN)
+        sendMouseMotion(
+            sequence = bb.getInt(8).toLong() and 0xFFFFFFFFL,
+            absolute = bb.get(5).toInt() == MousePacket.MODE_ABSOLUTE,
+            x = bb.getInt(12),
+            y = bb.getInt(16),
+            hwheel = bb.getInt(20),
+            vwheel = bb.getInt(24)
         )
     }
 

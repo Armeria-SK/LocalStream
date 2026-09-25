@@ -11,11 +11,8 @@ import com.localstream.client.R
 import com.localstream.client.databinding.ActivityControllerBinding
 import com.localstream.client.input.RemoteMouseController
 import com.localstream.client.net.ControlClient
-import com.localstream.client.proto.MousePacket
 import com.localstream.client.proto.ServerMessage
 import kotlinx.coroutines.launch
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
  * Controller-role screen: this device drives the PC's mouse and
@@ -55,7 +52,7 @@ class ControllerActivity : AppCompatActivity() {
 
         remoteMouse = RemoteMouseController(
             binding.touchpad,
-            sendMotion = { packet -> sendMotionTcp(packet) },
+            sendMotion = ControlClient::sendMousePacket,
             // Clean screen is a stream-viewer concern; the controller screen is always
             // controls-visible, so three-finger gestures belong to the touchpad itself.
             shouldHandleCleanScreenGesture = { false },
@@ -139,25 +136,6 @@ class ControllerActivity : AppCompatActivity() {
             }
             else -> {}
         }
-    }
-
-    /**
-     * Parses the serialized DSMI packet and carries it over the control channel as
-     * MOUSE_MOTION. Layout mirrors MousePacket.write: mode at 5, uint32 sequence at
-     * 8, int32 x/y at 12/16, wheels at 20/24 — all big-endian.
-     */
-    private fun sendMotionTcp(packet: ByteArray) {
-        if (packet.size < MousePacket.SIZE) return
-        val bb = ByteBuffer.wrap(packet).order(ByteOrder.BIG_ENDIAN)
-        val mode = bb.get(5).toInt()
-        ControlClient.sendMouseMotion(
-            sequence = bb.getInt(8).toLong() and 0xFFFFFFFFL,
-            absolute = mode == MousePacket.MODE_ABSOLUTE,
-            x = bb.getInt(12),
-            y = bb.getInt(16),
-            hwheel = bb.getInt(20),
-            vwheel = bb.getInt(24)
-        )
     }
 
     private val composerWatcher = object : TextWatcher {

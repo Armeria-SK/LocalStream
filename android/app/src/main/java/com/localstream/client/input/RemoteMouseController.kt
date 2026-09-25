@@ -32,7 +32,11 @@ class RemoteMouseController(
     /** Trackpad only: presses (true) / releases (false) Ctrl on the PC. When set, a two-finger
      * pinch zooms the way a Windows precision touchpad does, as Ctrl + wheel notches. The
      * caller sends the key because it owns the keyboard sequence space. */
-    private val zoomModifier: ((Boolean) -> Unit)? = null
+    private val zoomModifier: ((Boolean) -> Unit)? = null,
+    /** Carries the Ctrl-bracketed zoom wheel notch. It must be the ordered channel
+     * [zoomModifier] uses, or the notch can reach the PC outside its Ctrl press and scroll
+     * instead of zooming. Defaults to [sendMotion]. */
+    private val sendZoomMotion: ((ByteArray) -> Unit)? = null
 ) : View.OnTouchListener {
     private val packet = ByteArray(MousePacket.SIZE)
     private var enabled = false
@@ -579,7 +583,7 @@ class RemoteMouseController(
         if (steps == 0) return
         // Spreading zooms in, which is Ctrl + wheel away from the user (positive).
         modifier(true)
-        send(MousePacket.MODE_RELATIVE, 0, 0, 0, steps * WHEEL_NOTCH)
+        send(MousePacket.MODE_RELATIVE, 0, 0, 0, steps * WHEEL_NOTCH, via = sendZoomMotion ?: sendMotion)
         modifier(false)
     }
 
@@ -650,7 +654,8 @@ class RemoteMouseController(
         y: Int,
         horizontalWheel: Int,
         verticalWheel: Int,
-        force: Boolean = false
+        force: Boolean = false,
+        via: (ByteArray) -> Unit = sendMotion
     ) {
         val now = SystemClock.elapsedRealtimeNanos()
         if (!force && (x != 0 || y != 0) &&
@@ -666,7 +671,7 @@ class RemoteMouseController(
             horizontalWheel,
             verticalWheel
         )
-        sendMotion(packet)
+        via(packet)
     }
 
     private fun sendButton(button: String, down: Boolean) {
