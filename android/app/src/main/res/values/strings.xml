@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">LocalStream</string>
+    <string name="mouse_left_click_description">Send a left mouse click</string>
+    <string name="mouse_right_click_description">Send a right mouse click</string>
     <string name="mouse_gesture_hint">Move: 1 finger · Tap: click · Tap then drag: drag\n2-finger tap: right-click · 2-finger swipe: scroll · Pinch: zoom</string>
     <string name="leave_stream_prompt">Leave the stream?</string>
     <string name="leave_stream_action">LEAVE</string>
