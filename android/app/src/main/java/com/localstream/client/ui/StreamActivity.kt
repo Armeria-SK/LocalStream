@@ -10,7 +10,6 @@ import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.Surface
 import android.view.View
@@ -33,8 +32,6 @@ import com.localstream.client.audio.AudioPlaybackState
 import com.localstream.client.audio.AudioReceiver
 import com.localstream.client.audio.AudioStats
 import com.localstream.client.databinding.ActivityStreamBinding
-import com.localstream.client.input.GamepadForwarder
-import com.localstream.client.input.GamepadInventory
 import com.localstream.client.input.RemoteMouseController
 import com.localstream.client.net.ControlClient
 import com.localstream.client.net.MediaReceiver
@@ -63,9 +60,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     @Volatile private var videoDecoder: VideoDecoder? = null
     @Volatile private var mediaReceiver: MediaReceiver? = null
     @Volatile private var audioReceiver: AudioReceiver? = null
-    @Volatile private var gamepadForwardingEnabled = false
 
-    private lateinit var gamepadForwarder: GamepadForwarder
     private lateinit var remoteMouse: RemoteMouseController
     /** Cursor insurance: DXGI capture never contains the host cursor — only DSMC feedback
      * draws it. Until the first DSMC arrives, integrate the outgoing motion packets
@@ -130,9 +125,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     /** The persistent mouse affordance is one compact pill. Its full action strip is revealed
      * only on demand and automatically collapses after a short idle period. */
     private var mouseToolbarExpanded = false
-    private var gamepadInventory = GamepadInventory(0, 0, emptyList())
-    private var gamepadStatus = "none detected"
-    private var gamepadDetail = "Connect a Bluetooth or USB controller to Android"
     /** Leave confirmation is a modal dialog rather than a Snackbar: a TV remote's D-pad can
      * focus its buttons, it never auto-dismisses, and Back cancels it. */
     private var leaveDialog: AlertDialog? = null
@@ -176,7 +168,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         binding = ActivityStreamBinding.inflate(layoutInflater)
         setContentView(binding.root)
         controlsHidden = savedInstanceState?.getBoolean(STATE_CONTROLS_HIDDEN) == true
-        gamepadForwarder = GamepadForwarder(applicationContext, ::onGamepadInventoryChanged)
         remoteMouse = RemoteMouseController(
             binding.surfaceView,
             sendMotion = { packet ->
@@ -260,9 +251,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onStart() {
         super.onStart()
         acquireWifiLock()
-        gamepadForwarder.start { packet ->
-            if (gamepadForwardingEnabled) mediaReceiver?.sendGamepadPacket(packet)
-        }
         maybeStartStream()
     }
 
@@ -275,8 +263,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         resetRemotePointerState()
         releaseWifiLock()
         streamRequested = false
-        gamepadForwardingEnabled = false
-        gamepadForwarder.stop()
         stopReceivers("lifecycle-stop")
     }
 
@@ -291,7 +277,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         cursorFallbackJob?.cancel()
         cursorFallbackJob = null
         super.onDestroy()
-        gamepadForwarder.stop()
         stopReceivers("destroy")
         videoDecoder?.release()
         videoDecoder = null
@@ -304,7 +289,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // F11 is a hardware-keyboard fallback for clean screen. Consume both key edges so a
-        // connected keyboard/gamepad can never receive a mismatched down/up pair.
+        // connected keyboard can never receive a mismatched down/up pair.
         if (event.keyCode == KeyEvent.KEYCODE_F11) {
             if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) {
                 if (controlsHidden) showControls() else hideControls()
@@ -322,7 +307,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) showControls()
             return true
         }
-        if (gamepadForwarder.handleKeyEvent(event)) return true
         // Only steals the D-pad once clean screen has hidden the (now focusable) toolbar --
         // otherwise D-pad still drives ordinary on-screen focus navigation between buttons, and
         // DPAD_CENTER/ENTER performs a normal button click via the standard focus system.
@@ -333,8 +317,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
     /** D-pad-as-mouse fallback used only while clean screen is active (see [dispatchKeyEvent]).
      * Direction keys nudge the cursor at a fixed step on a repeating timer for as long as held;
      * DPAD_CENTER/ENTER left-clicks on a short press and right-clicks on a long press, mirroring
-     * the touch toolbar's single click vs. explicit right-click action. Real gamepad D-pad input
-     * is already claimed by [gamepadForwarder] above and never reaches here. */
+     * the touch toolbar's single click vs. explicit right-click action. */
     private fun handleRemotePointerKey(event: KeyEvent): Boolean {
         if (!(mouseStatus == "live" && mouseEnabledByUser)) {
             // No usable pointer while the overlay is hidden (mouse still negotiating after a
@@ -407,10 +390,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         remotePointerDy = 0f
         remotePointerRepeating = false
         remoteCenterLongClickFired = false
-    }
-
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        return if (gamepadForwarder.handleMotionEvent(event)) true else super.dispatchGenericMotionEvent(event)
     }
 
     /**
@@ -517,11 +496,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 is ServerMessage.StreamStarted -> onStreamStarted(msg)
                 is ServerMessage.AudioStarted -> onAudioStarted(msg)
                 is ServerMessage.AudioUnavailable -> onAudioUnavailable(msg.message)
-                is ServerMessage.GamepadStarted -> onGamepadStarted(msg)
-                is ServerMessage.GamepadUnavailable -> onGamepadUnavailable(msg)
-                is ServerMessage.GamepadRumble -> gamepadForwarder.rumble(
-                    msg.controllerId, msg.largeMotor, msg.smallMotor
-                )
                 ServerMessage.InputStarted -> onInputStarted()
                 is ServerMessage.InputUnavailable -> onInputUnavailable(msg.message)
                 ServerMessage.StreamStopped -> {
@@ -683,8 +657,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
 
-        gamepadForwardingEnabled = false
-        negotiateGamepads()
         negotiateMouseInput()
 
         binding.tvStreamStatus.visibility = View.VISIBLE
@@ -1097,69 +1069,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         showSnackbar("Video is live, but audio is unavailable: $audioDetail", Snackbar.LENGTH_LONG)
     }
 
-    private fun onGamepadInventoryChanged(inventory: GamepadInventory) {
-        gamepadInventory = inventory
-        if (inventory.deviceCount == 0) {
-            gamepadForwardingEnabled = false
-            gamepadStatus = "none detected"
-            gamepadDetail = "Connect a Bluetooth or USB controller to Android"
-            if (ControlClient.state.value == ControlClient.State.STREAMING) {
-                ControlClient.stopGamepads()
-            }
-        } else {
-            val names = inventory.names.joinToString()
-            gamepadStatus = "detected"
-            gamepadDetail = "$names · waiting for PC virtual controller"
-            if (ControlClient.state.value == ControlClient.State.STREAMING && lastStreamWidth > 0) {
-                gamepadForwardingEnabled = false
-                ControlClient.startGamepads(inventory.requiredSlots)
-            }
-        }
-        updateGamepadStatus()
-        renderDiagnostics()
-    }
-
-    private fun negotiateGamepads() {
-        if (gamepadInventory.deviceCount <= 0) {
-            gamepadStatus = "none detected"
-            gamepadDetail = "Connect a Bluetooth or USB controller to Android"
-            updateGamepadStatus()
-            return
-        }
-        gamepadStatus = "connecting"
-        gamepadDetail = "Creating Xbox 360 controller on the PC"
-        updateGamepadStatus()
-        ControlClient.startGamepads(gamepadInventory.requiredSlots)
-    }
-
-    private fun onGamepadStarted(message: ServerMessage.GamepadStarted) {
-        if (gamepadInventory.deviceCount <= 0) {
-            ControlClient.stopGamepads()
-            return
-        }
-        gamepadForwardingEnabled = true
-        gamepadForwarder.requestSnapshot()
-        gamepadStatus = "live"
-        val count = gamepadInventory.deviceCount
-        gamepadDetail = "$count Android controller${if (count == 1) "" else "s"} → " +
-            "${message.controllers} virtual Xbox 360 controller${if (message.controllers == 1) "" else "s"}"
-        updateGamepadStatus()
-        renderDiagnostics()
-    }
-
-    private fun onGamepadUnavailable(message: ServerMessage.GamepadUnavailable) {
-        gamepadForwardingEnabled = false
-        gamepadStatus = "PC driver required"
-        gamepadDetail = message.message.ifEmpty { "Install ViGEmBus 1.22 on the PC" }
-        updateGamepadStatus()
-        renderDiagnostics()
-        showSnackbar("Controller unavailable: $gamepadDetail", Snackbar.LENGTH_LONG)
-    }
-
-    private fun updateGamepadStatus() {
-        binding.tvGamepadStatus.text = "Controller: $gamepadStatus"
-    }
-
     /** [reason] is recorded as the hide cause when the cursor is currently visible, so the
      * CURSOR stats line can name the event that took it off screen. */
     private fun stopReceivers(reason: String) {
@@ -1190,12 +1099,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         stoppedDecoder?.release()
         audioReceiver?.stop()
         audioReceiver = null
-        gamepadForwardingEnabled = false
-        if (gamepadInventory.deviceCount > 0) {
-            gamepadStatus = "paused"
-            gamepadDetail = "Controller forwarding is paused until the stream reconnects"
-            updateGamepadStatus()
-        }
         binding.btnAudio.isEnabled = false
     }
 
@@ -1260,7 +1163,6 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
             } else {
                 append("A-NET  waiting for audio packets…")
             }
-            append("\nPAD    $gamepadDetail")
             append("\nMOUSE  $mouseStatus · ")
             append(if (mouseEnabledByUser) "on" else "off")
             append("\nCURSOR out=$cursorOutPackets · dsmc=")

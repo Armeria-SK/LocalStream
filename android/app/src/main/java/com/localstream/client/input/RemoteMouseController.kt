@@ -20,7 +20,7 @@ class RemoteMouseController(
     private val target: View,
     private val sendMotion: (ByteArray) -> Unit,
     /** The reveal path is captured only while clean screen is active, so ordinary three-finger
-     * input cannot interfere with mouse/gamepad use while the controls are visible. */
+     * input cannot interfere with mouse use while the controls are visible. */
     private val shouldHandleCleanScreenGesture: () -> Boolean = { false },
     private val onCleanScreenReveal: () -> Unit = {},
     /** Laptop/phone trackpad semantics for a dedicated pad (controller screen): a single tap

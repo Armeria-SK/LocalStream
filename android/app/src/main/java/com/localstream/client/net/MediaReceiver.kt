@@ -4,7 +4,6 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import com.localstream.client.proto.MediaPacketHeader
-import com.localstream.client.proto.GamepadPacket
 import com.localstream.client.proto.MousePacket
 import com.localstream.client.proto.CursorPacket
 import com.localstream.client.proto.CursorPosition
@@ -74,13 +73,6 @@ class MediaReceiver(
      * freezing until a replacement IDR arrives. */
     refreshRecovery: Boolean = false
 ) {
-    private enum class InputPacketKind { GAMEPAD, MOUSE }
-
-    private data class OutboundInputPacket(
-        val kind: InputPacketKind,
-        val data: ByteArray
-    )
-
     val bufferPool = BufferPool()
 
     private val framesAssembled = AtomicInteger(0)
@@ -129,12 +121,11 @@ class MediaReceiver(
     private var socket: DatagramSocket? = null
     private var thread: Thread? = null
     private val inputSendGate = Any()
-    private val inputSendQueue = Channel<OutboundInputPacket>(
+    private val inputSendQueue = Channel<ByteArray>(
         capacity = INPUT_SEND_QUEUE_CAPACITY,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     private var inputSendJob: Job? = null
-    private var gamepadDatagram: DatagramPacket? = null
     private var mouseDatagram: DatagramPacket? = null
     @Volatile private var running = false
     private var serverIp: String = ""
@@ -193,12 +184,10 @@ class MediaReceiver(
         // Keep the UDP socket unconnected, as in the stable v0.2 receiver. Some Samsung/OEM
         // network stacks reject or later invalidate connected datagram sockets during Wi-Fi
         // route changes. We validate the source endpoint explicitly in receiveLoop instead.
-        gamepadDatagram = DatagramPacket(ByteArray(GamepadPacket.SIZE), GamepadPacket.SIZE, address, mediaPort)
         mouseDatagram = DatagramPacket(ByteArray(MousePacket.SIZE), MousePacket.SIZE, address, mediaPort)
         // Mouse callbacks run on Android's main thread, where DatagramSocket.send() throws
-        // NetworkOnMainThreadException. The controller producer also must not block on the
-        // network. One bounded IO sender keeps both streams ordered and low-latency without
-        // creating an unbounded backlog.
+        // NetworkOnMainThreadException. One bounded IO sender keeps them ordered and
+        // low-latency without creating an unbounded backlog.
         inputSendJob = scope.launch(Dispatchers.IO) { inputSendLoop() }
         // TCP announces the bound port reliably; DSMH remains a NAT/firewall fallback.
         ControlClient.prepareForMediaEpoch()
@@ -224,7 +213,6 @@ class MediaReceiver(
         socket?.close() // unblocks the blocking receive() in the worker thread
         socket = null
         synchronized(inputSendGate) {
-            gamepadDatagram = null
             mouseDatagram = null
         }
         thread?.let { t ->
@@ -249,21 +237,11 @@ class MediaReceiver(
         frameAssembler.requestDiscardUntilKeyframe()
     }
 
-    /** Sends one already-serialized controller snapshot without allocating a DatagramPacket. */
-    fun sendGamepadPacket(data: ByteArray) {
-        if (!running || data.size != GamepadPacket.SIZE) return
-        enqueueInput(InputPacketKind.GAMEPAD, data)
-    }
-
     fun sendMousePacket(data: ByteArray) {
         if (!running || data.size != MousePacket.SIZE) return
-        enqueueInput(InputPacketKind.MOUSE, data)
-    }
-
-    private fun enqueueInput(kind: InputPacketKind, data: ByteArray) {
-        // Both producers reuse their serialization buffer, so the queued snapshot must own
-        // its bytes. The queue is bounded and drops stale input rather than adding latency.
-        inputSendQueue.trySend(OutboundInputPacket(kind, data.copyOf()))
+        // The producer reuses its serialization buffer, so the queued snapshot must own its
+        // bytes. The queue is bounded and drops stale input rather than adding latency.
+        inputSendQueue.trySend(data.copyOf())
     }
 
     private suspend fun inputSendLoop() {
@@ -271,12 +249,9 @@ class MediaReceiver(
             if (!running) break
             synchronized(inputSendGate) {
                 val sock = socket ?: return@synchronized
-                val packet = when (outbound.kind) {
-                    InputPacketKind.GAMEPAD -> gamepadDatagram
-                    InputPacketKind.MOUSE -> mouseDatagram
-                } ?: return@synchronized
+                val packet = mouseDatagram ?: return@synchronized
                 try {
-                    packet.setData(outbound.data, 0, outbound.data.size)
+                    packet.setData(outbound, 0, outbound.size)
                     sock.send(packet)
                 } catch (e: IOException) {
                     if (running) Log.w(TAG, "input packet send failed", e)

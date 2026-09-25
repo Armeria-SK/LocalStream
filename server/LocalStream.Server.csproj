@@ -27,8 +27,6 @@
     <PackageReference Include="Vortice.Mathematics" Version="1.9.2" />
     <!-- WASAPI loopback capture for the default Windows playback device. -->
     <PackageReference Include="NAudio" Version="2.3.0" />
-    <!-- Optional virtual Xbox 360 controller client; requires ViGEmBus on the host. -->
-    <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
     <!-- Direct NVIDIA NVENC bindings; loaded only on NVIDIA systems, with Media Foundation fallback. -->
     <PackageReference Include="Lennox.NvEncSharp" Version="2.1.1" />
   </ItemGroup>

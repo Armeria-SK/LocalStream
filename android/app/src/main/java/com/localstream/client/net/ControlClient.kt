@@ -192,14 +192,6 @@ object ControlClient {
         scope.launch { writeFrame(ClientMessages.audioReady(port)) }
     }
 
-    fun startGamepads(controllers: Int) {
-        scope.launch { writeFrame(ClientMessages.startGamepads(controllers)) }
-    }
-
-    fun stopGamepads() {
-        scope.launch { writeFrame(ClientMessages.stopGamepads()) }
-    }
-
     fun startMouseInput() {
         scope.launch { writeFrame(ClientMessages.startMouseInput()) }
     }
@@ -425,11 +417,6 @@ object ControlClient {
             }
             is ServerMessage.AudioStarted, is ServerMessage.AudioUnavailable -> {
                 // event only; audio is optional and does not change video session state
-            }
-            is ServerMessage.GamepadStarted,
-            is ServerMessage.GamepadUnavailable,
-            is ServerMessage.GamepadRumble -> {
-                // event only; controller forwarding is optional
             }
             ServerMessage.InputStarted, is ServerMessage.InputUnavailable -> {
                 // event only; authenticated remote input is optional

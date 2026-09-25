@@ -96,11 +96,6 @@ public sealed class EndpointReadyMessage
     [JsonPropertyName("port")] public int Port { get; set; }
 }
 
-public sealed class GamepadStartMessage
-{
-    [JsonPropertyName("controllers")] public int Controllers { get; set; }
-}
-
 public sealed class StatsMessage
 {
     [JsonPropertyName("framesOk")] public int FramesOk { get; set; }
@@ -196,20 +191,6 @@ public static class OutgoingMessages
 
     public static object AudioUnavailable(string message) =>
         new { type = "AUDIO_UNAVAILABLE", message };
-
-    public static object GamepadStarted(int controllers) =>
-        new { type = "GAMEPAD_STARTED", controllers, controllerType = "xbox360" };
-
-    public static object GamepadUnavailable(string message) =>
-        new
-        {
-            type = "GAMEPAD_UNAVAILABLE",
-            message,
-            driverUrl = "https://github.com/nefarius/ViGEmBus/releases/latest",
-        };
-
-    public static object GamepadRumble(int controllerId, byte largeMotor, byte smallMotor) =>
-        new { type = "GAMEPAD_RUMBLE", controllerId, largeMotor, smallMotor };
 
     public static object InputStarted(bool mouse, bool keyboard) =>
         new { type = "INPUT_STARTED", mouse, keyboard };
