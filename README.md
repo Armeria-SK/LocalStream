@@ -11,8 +11,8 @@ Windows PC の画面と音声を、同じ LAN 内のテレビ・スマホに低�
 
 | フォルダ | 内容 |
 |---|---|
-| [`server/`](server/README.md) | Windows 用サーバー（C# / .NET 8）。キャプチャ・エンコード・送信、入力の再現 |
-| [`android/`](android/README.md) | Android / Android TV クライアント（Kotlin）。スマホをトラックパッド＆キーボードにする機能も内蔵 |
+| `server/` | Windows 用サーバー（C# / .NET 8）。キャプチャ・エンコード・送信、入力の再現 |
+| `android/` | Android / Android TV クライアント（Kotlin）。スマホをトラックパッド＆キーボードにする機能も内蔵 |
 
 ## 必要なもの
 
@@ -81,7 +81,7 @@ GitHub Actions の「Android APK」ワークフローの成果物（`localstream
 
 ## 設定
 
-サーバーの主な起動オプション（詳細は [`server/README.md`](server/README.md)）:
+サーバーの主な起動オプション:
 
 | オプション | 内容 |
 |---|---|
