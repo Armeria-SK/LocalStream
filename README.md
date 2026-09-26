@@ -78,23 +78,6 @@ GitHub Actions の「Android APK」ワークフローの成果物（`localstream
 | `TV` | ゲームモード要求の結果 |
 | `MOUSE` / `CURSOR` | マウス入力の状態と、カーソル表示の診断 |
 
-## 設定
-
-サーバーの主な起動オプション:
-
-| オプション | 内容 |
-|---|---|
-| `--max-bitrate-kbps N` | ビットレート上限（既定 50000） |
-| `--headless` | ログをファイルに出して常駐 |
-| `--install-autostart` / `--uninstall-autostart` | ログオン時の自動起動を登録 / 解除 |
-
-環境変数:
-
-| 変数 | 内容 |
-|---|---|
-| `LOCALSTREAM_ENCODER=nvenc\|mf` | エンコーダを固定（NVENC 限定 / Media Foundation 強制） |
-| `LOCALSTREAM_CODEC=h264` | HEVC を使わず H.264 に固定 |
-
 ## ポート
 
 | ポート | 用途 |
@@ -103,13 +86,3 @@ GitHub Actions の「Android APK」ワークフローの成果物（`localstream
 | TCP 47801 | 制御（接続・ペアリング・入力） |
 | UDP 47802 | 映像（カーソル位置もここで送る） |
 | UDP 47803 | 音声 |
-
-## トラブルシューティング
-
-- **新機能が効かない**：PC のサーバーとテレビのアプリの両方が最新か確認してください。
-  配信開始時に PC のコンソールに `streaming started: ... (hevc, refresh recovery)` のようにコーデックが出ていれば、サーバーは新しい版です。
-- **HEVC にならない**：
-  - テレビの `VIDEO` 行が `offered h264` の場合は、テレビに条件を満たす HEVC デコーダがありません。
-  - `offered hevc/h264` なのに `H264` の場合は、PC 側で HEVC を開始できていません（サーバーのログ `localstream.app.log` に理由が出ます）。
-- **遅延が大きい**：テレビの `TV` 行でゲームモードを確認してください。Wi-Fi の混雑が原因のときは `--max-bitrate-kbps` を下げると改善します。
-- **昇格したアプリを操作できない**：Windows の仕様上、管理者権限で動くアプリへ入力するにはサーバーも管理者権限で動かす必要があります。
