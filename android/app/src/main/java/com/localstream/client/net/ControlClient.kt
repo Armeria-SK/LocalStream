@@ -90,6 +90,11 @@ object ControlClient {
     @Volatile private var socket: Socket? = null
 
     @Volatile var serverIp: String = ""
+    /** Numeric address of the connected control socket. [serverIp] may be a host name
+     * (e.g. a Tailscale MagicDNS name); media sockets use this so they never need a DNS
+     * lookup, which would throw NetworkOnMainThreadException on the UI thread. */
+    @Volatile var serverAddress: String = ""
+        private set
         private set
     @Volatile var serverPort: Int = 0
         private set
@@ -347,6 +352,7 @@ object ControlClient {
         }
 
         socket = sock
+        serverAddress = sock.inetAddress?.hostAddress ?: ip
         backoffMs = INITIAL_BACKOFF_MS
         lastReceivedAt = SystemClock.elapsedRealtime()
         // A reconnect may land on a freshly restarted server whose monotonic-clock origin is
