@@ -624,7 +624,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         mediaReceiver = receiver
         videoDecoder = decoder
         decoder.resetForNewStream(holder.surface, msg.width, msg.height, msg.fps, msg.codec)
-        if (!receiver.start(ControlClient.serverIp, msg.mediaPort, msg.clockBaseUs)) {
+        if (!receiver.start(ControlClient.serverAddress, msg.mediaPort, msg.clockBaseUs)) {
             mediaReceiver = null
             videoDecoder = null
             decoder.release()
@@ -970,7 +970,7 @@ class StreamActivity : AppCompatActivity(), SurfaceHolder.Callback {
         )
         audioReceiver = receiver
         receiver.start(
-            serverIp = ControlClient.serverIp,
+            serverIp = ControlClient.serverAddress,
             audioPort = msg.audioPort,
             sampleRate = msg.sampleRate,
             channels = msg.channels,
